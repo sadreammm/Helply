@@ -53,16 +53,6 @@ cd Backend
 pip install -r requirements.txt
 ```
 
-#### Configure CRM Connection
-
-Copy the example environment file:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Edit `.env` and configure your CRM type. See [CRM Configuration](#crm-configuration) below.
-
 #### Start the Backend
 
 ```powershell
