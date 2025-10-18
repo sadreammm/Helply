@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+python-dotenv
+
+# CRM Connectors
+simple-salesforce
+hubspot-api-client
+requests
+
+# Optional: Database for caching
+sqlalchemy
+aiosqlite

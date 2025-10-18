@@ -1,0 +1,14 @@
+import hubspot.cms.blogs.blog_posts as api_client
+from ....discovery_base import DiscoveryBase
+
+
+class Discovery(DiscoveryBase):
+    @property
+    def basic_api(self) -> api_client.BasicApi:
+        return self._configure_api_client(api_client, "BasicApi")
+    @property
+    def batch_api(self) -> api_client.BatchApi:
+        return self._configure_api_client(api_client, "BatchApi")
+    @property
+    def multi_language_api(self) -> api_client.MultiLanguageApi:
+        return self._configure_api_client(api_client, "MultiLanguageApi")

@@ -1,0 +1,12 @@
+import hubspot.crm.imports as api_client
+from ...discovery_base import DiscoveryBase
+
+
+class Discovery(DiscoveryBase):
+    @property
+    def core_api(self) -> api_client.CoreApi:
+        return self._configure_api_client(api_client, "CoreApi")
+
+    @property
+    def public_imports_api(self) -> api_client.PublicImportsApi:
+        return self._configure_api_client(api_client, "PublicImportsApi")
