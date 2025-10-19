@@ -2,17 +2,15 @@ window.__ONBOARD = window.__ONBOARD || { API_BASE: 'http://localhost:8000', EMPL
 const API_BASE = window.__ONBOARD.API_BASE;
 const EMPLOYEE_ID = window.__ONBOARD.EMPLOYEE_ID;
 
-// ✅ Global listener for refresh event
 chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === "refreshTasks") {
-        console.log("[ONBOARD.AI] Refreshing task list...");
+        console.log("[ONBOARD.AI] Refreshing task list");
         loadCurrentTask();
     }
 });
 
 async function loadCurrentTask() {
     try {
-        // Get current tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
         const response = await fetch(`${API_BASE}/api/employee/task`, {
@@ -49,7 +47,7 @@ function displayTask(task, employee) {
                 <div class="progress-fill" style="width: ${progress}%"></div>
             </div>
             <span class="status-badge status-${task.status === 'completed' ? 'complete' : 'active'}">
-                ${task.status === 'completed' ? '✓ Complete' : '⏱ In Progress'}
+                ${task.status === 'completed' ? 'Complete' : 'In Progress'}
             </span>
         </div>
         
@@ -80,7 +78,6 @@ function displayTask(task, employee) {
     
     document.getElementById('task-container').innerHTML = html;
     
-    // Add event listeners
     document.getElementById('start-guidance').addEventListener('click', async () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         chrome.tabs.sendMessage(tab.id, { action: 'start_guidance' });
@@ -134,11 +131,9 @@ function displayError() {
     });
 }
 
-// Load task when popup opens
 document.addEventListener('DOMContentLoaded', async () => {
     await loadCurrentTask();
 
-    // Optional: reload if active tab changes
     chrome.tabs.onActivated.addListener(() => {
         loadCurrentTask();
     });
