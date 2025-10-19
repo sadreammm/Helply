@@ -1,7 +1,3 @@
-"""guidance_generator.py - FIXED VERSION
-
-Enhanced to properly detect completion and match action IDs
-"""
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 import yaml
@@ -35,10 +31,6 @@ class KBGuidance:
 
 
 class GuidanceGenerator:
-    """Load the YAML KB and provide accessors and a lightweight guidance
-    generator that turns KB steps into guidance objects.
-    """
-
     def __init__(self, kb: Optional[Dict[str, Any]] = None):
         if kb is None:
             try:
@@ -51,58 +43,41 @@ class GuidanceGenerator:
             self.kb = kb
 
     def get_action_definition(self, platform: str, action_id: str) -> Optional[Dict[str, Any]]:
-        """Return the KB action dict for a given platform and action id.
-
-        platform may be a short key like 'github' or full hostname; we try both.
-        action_id can be full task type like 'github_repo_creation' or partial like 'create_repository'
-        """
         logger.info(f"get_action_definition called with platform='{platform}', action_id='{action_id}'")
         platforms = self.kb.get('platforms', {})
-        
-        # Extract platform short name from full domain if needed
+
         platform_key = platform.split('.')[0] if '.' in platform else platform
         logger.info(f"Extracted platform_key: '{platform_key}'")
-        
-        # First try direct platform match
+
         if platform_key in platforms:
             actions = platforms[platform_key].get('actions', {})
             
-            # Try action_id as direct key
             if action_id in actions:
                 logger.info(f"Found action by direct key: {action_id}")
                 return actions[action_id]
             
-            # Try action_id as the 'id' field value
             for k, v in actions.items():
                 if v.get('id') == action_id:
                     logger.info(f"Found action by id field: {k}")
                     return v
-            
-            # Parse task type format: platform_action (e.g., "github_repo_creation")
+
             if '_' in action_id:
-                # Remove platform prefix if present
                 action_part = action_id.replace(f"{platform_key}_", "", 1)
                 logger.info(f"Extracted action_part: '{action_part}'")
                 
-                # Try matching against action keys and IDs
                 for k, v in actions.items():
-                    # Direct match on key
                     if k == action_part or action_part in k:
                         logger.info(f"Matched action key: {k}")
                         return v
-                    
-                    # Match on id field
+
                     if v.get('id') == action_part or action_part in v.get('id', ''):
                         logger.info(f"Matched action id: {v.get('id')}")
                         return v
                     
-                    # Special patterns for common mismatches
-                    # e.g., "repo_creation" should match "create_repository"
                     if self._fuzzy_match(action_part, k) or self._fuzzy_match(action_part, v.get('id', '')):
                         logger.info(f"Fuzzy matched: {k}")
                         return v
         
-        # Fallback: try matching by id across all platforms
         for p, pdata in platforms.items():
             for k, v in pdata.get('actions', {}).items():
                 if v.get('id') == action_id or k == action_id:
@@ -113,16 +88,12 @@ class GuidanceGenerator:
         return None
     
     def _fuzzy_match(self, action_part: str, target: str) -> bool:
-        """Fuzzy match action strings (handles common variations)"""
-        # Normalize both strings
         a = action_part.lower().replace('_', '').replace('-', '')
         b = target.lower().replace('_', '').replace('-', '')
         
-        # Check for substring matches
         if a in b or b in a:
             return True
         
-        # Check for common patterns
         patterns = [
             (r'repo.*creation', r'create.*repository'),
             (r'pull.*request', r'create.*pr'),
@@ -144,38 +115,27 @@ class GuidanceGenerator:
         for i, step in enumerate(steps):
             page_pattern = step.get('page_pattern', '').lower()
             
-            # Simple wildcard matching
             if page_pattern:
-                # Remove leading/trailing wildcards for matching
                 pattern = page_pattern.replace('*', '')
                 if pattern in url:
                     logger.info(f"Detected step {i} based on page_pattern: {page_pattern}")
                     return i
-            
-            # Check completion indicators
+
             completion = step.get('completion_indicators', [])
             if completion:
-                # Check if any completion indicator is in the page
                 visible_text = context.get('visible_text', '').lower()
                 dom_elements = [el.lower() for el in context.get('dom_elements', [])]
                 
                 for indicator in completion:
                     indicator_lower = indicator.lower()
-                    # Check in visible text or DOM
                     if indicator_lower in visible_text or \
                        any(indicator_lower in el for el in dom_elements):
                         logger.info(f"Step {i} appears complete (found indicator: {indicator})")
-                        # This step is complete, user is on next step
                         return min(i + 1, len(steps) - 1)
         
-        # Default: return current_step from context if available
         return context.get('current_step', 0)
 
     def generate_guidance(self, platform: str, action_id: str, context: Dict[str, Any], current_step: int) -> KBGuidance:
-        """Generate KB-only guidance for a given action and step.
-
-        Returns KBGuidance with a list of KBActionItem objects.
-        """
         action_def = self.get_action_definition(platform, action_id)
         if not action_def:
             logger.warning(f"No action definition found, returning fallback guidance")
@@ -192,18 +152,13 @@ class GuidanceGenerator:
                 actions=[KBActionItem(selector='body', message='No steps defined', action_type='tooltip')],
                 tip=None
             )
-        
-        # Detect actual step based on URL/page content
         detected_step = self.detect_current_step(action_def, context)
-        
-        # Use detected step if it's further along than current_step
         if detected_step > current_step:
             logger.info(f"Auto-advancing from step {current_step} to {detected_step} based on page detection")
             step_index = detected_step
         else:
             step_index = current_step
         
-        # Clamp to valid range
         step_index = min(max(step_index, 0), len(steps) - 1)
         step = steps[step_index]
         
@@ -216,7 +171,6 @@ class GuidanceGenerator:
 
         actions: List[KBActionItem] = []
         
-        # Process selectors
         for sel in step_selectors:
             if isinstance(sel, str):
                 actions.append(KBActionItem(
@@ -237,7 +191,6 @@ class GuidanceGenerator:
                     priority=priority
                 ))
 
-        # If no selectors, create a text-based guidance
         if not actions:
             guidance_text = step.get('message', action_def.get('title', 'Proceed'))
             actions.append(KBActionItem(
@@ -257,7 +210,6 @@ class GuidanceGenerator:
         )
 
 
-# Helper: load KB from project root if available
 def load_kb_from_project(root_path: Optional[str] = None) -> Dict[str, Any]:
     path = KB_PATH if root_path is None else os.path.join(root_path, 'action_kb.yaml')
     try:
@@ -267,7 +219,6 @@ def load_kb_from_project(root_path: Optional[str] = None) -> Dict[str, Any]:
         return {"platforms": {}}
 
 
-# When imported, provide a convenience instance that loads the local KB
 _default_generator = GuidanceGenerator()
 
 def get_default_generator() -> GuidanceGenerator:
