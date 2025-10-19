@@ -1,5 +1,3 @@
-# ai_engine.py - Gemini-Powered Guidance Engine
-
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
 import json
@@ -9,7 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 class GuidanceRequest(BaseModel):
-    """Request for AI guidance generation"""
     task_title: str
     task_description: str
     current_url: str
@@ -22,17 +19,15 @@ class GuidanceRequest(BaseModel):
 
 
 class GuidanceAction(BaseModel):
-    """Single guidance action for overlay"""
     selector: str
     action_type: str  # click, type, highlight, navigate
     message: str
-    priority: int = 3  # 1-5, 5 being highest
-    reasoning: str = ""  # Why this action
-    alternatives: List[str] = Field(default_factory=list)  # Alternative selectors
+    priority: int = 3  
+    reasoning: str = ""  
+    alternatives: List[str] = Field(default_factory=list)  
 
 
 class AIGuidanceResponse(BaseModel):
-    """AI-generated guidance response"""
     actions: List[GuidanceAction]
     tip: str = ""
     explanation: str = ""
@@ -42,8 +37,6 @@ class AIGuidanceResponse(BaseModel):
 
 
 class AIGuidanceEngine:
-    """Gemini-powered guidance engine"""
-    
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         self.api_key = api_key
         self.model = model
@@ -51,32 +44,26 @@ class AIGuidanceEngine:
         self._initialize_client()
     
     def _initialize_client(self):
-        """Initialize Gemini client"""
         try:
             import google.generativeai as genai
             genai.configure(api_key=self.api_key)
             self.client = genai.GenerativeModel(self.model)
-            logger.info(f"✓ Gemini client initialized (model: {self.model})")
+            logger.info(f"Gemini client initialized (model: {self.model})")
         except ImportError:
             logger.error("Google Generative AI package not installed. Run: pip install google-generativeai")
             raise ImportError("Install google-generativeai package: pip install google-generativeai")
     
     async def generate_guidance(self, request: GuidanceRequest) -> AIGuidanceResponse:
-        """Generate context-aware guidance using Gemini"""
-        
         if not self.client:
             logger.error("Gemini client not initialized")
             return self._create_fallback_guidance(request)
         
         try:
-            # Build prompts
             system_prompt = self._build_system_prompt()
             user_prompt = self._build_user_prompt(request)
             
-            # Call Gemini
             response = await self._call_gemini(system_prompt, user_prompt)
             
-            # Parse and validate response
             return self._parse_ai_response(response, request)
         
         except Exception as e:
@@ -84,7 +71,6 @@ class AIGuidanceEngine:
             return self._create_fallback_guidance(request)
     
     def _build_system_prompt(self) -> str:
-        """Build system prompt for OpenAI"""
         return """You are an expert onboarding assistant that generates step-by-step guidance for web applications.
 
 Your role:
@@ -123,8 +109,6 @@ Guidelines:
 - Priority 5 = critical action, 1 = optional/informational"""
     
     def _build_user_prompt(self, request: GuidanceRequest) -> str:
-        """Build user prompt with context"""
-        # Truncate for token efficiency
         dom_sample = request.dom_elements[:50] if len(request.dom_elements) > 50 else request.dom_elements
         visible_text_sample = request.visible_text[:2000] if len(request.visible_text) > 2000 else request.visible_text
         
@@ -146,13 +130,10 @@ Analyze this page and provide guidance for step {request.step_number}. What shou
 Return ONLY valid JSON matching the specified format."""
     
     async def _call_gemini(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Gemini API"""
         import asyncio
         
-        # Combine system and user prompts for Gemini
         full_prompt = f"{system_prompt}\n\n{user_prompt}"
         
-        # Gemini doesn't have native async, so wrap in executor
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
@@ -168,11 +149,9 @@ Return ONLY valid JSON matching the specified format."""
         return response.text
     
     def _parse_ai_response(self, ai_response: str, request: GuidanceRequest) -> AIGuidanceResponse:
-        """Parse and validate AI response"""
         try:
             data = json.loads(ai_response)
             
-            # Convert to GuidanceAction objects
             actions = []
             for action_data in data.get('actions', []):
                 actions.append(GuidanceAction(
@@ -199,7 +178,6 @@ Return ONLY valid JSON matching the specified format."""
             return self._create_fallback_guidance(request)
     
     def _create_fallback_guidance(self, request: GuidanceRequest) -> AIGuidanceResponse:
-        """Create fallback guidance when AI fails"""
         return AIGuidanceResponse(
             actions=[
                 GuidanceAction(
