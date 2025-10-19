@@ -4,9 +4,8 @@ pydantic
 pydantic-settings
 python-dotenv
 
-# CRM Connectors
-simple-salesforce
-hubspot-api-client
+pyyaml
+openai
 requests
 
 # Optional: Database for caching

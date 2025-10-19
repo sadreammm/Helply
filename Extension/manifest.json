@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ONBOARD.AI - Smart Onboarding Assistant",
-  "version": "1.0.0",
-  "description": "AI-powered overlay that guides employees through onboarding tasks on GitHub and other platforms",
+  "version": "2.0.0",
+  "description": "AI-powered assistant that guides employees through onboarding tasks using natural language",
   "permissions": [
     "storage",
     "tabs",
@@ -12,6 +12,9 @@
   ],
   "host_permissions": [
     "https://github.com/*",
+    "https://slack.com/*",
+    "https://*.atlassian.net/*",
+    "https://figma.com/*",
     "http://localhost:8000/*",
     "https://localhost:8000/*"
   ],
@@ -20,7 +23,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://github.com/*"],
+      "matches": [
+        "https://github.com/*",
+        "https://slack.com/*",
+        "https://*.atlassian.net/*",
+        "https://figma.com/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

@@ -1,21 +1,100 @@
-# app.py - ONBOARD.AI Backend with Dynamic CRM Integration
-from fastapi import FastAPI, HTTPException
+# app.py - ONBOARD.AI Backend with Simplified CRM
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from urllib.parse import urlparse
-from datetime import datetime
+from contextlib import asynccontextmanager
+import yaml
 import logging
+from datetime import datetime
 
-# Import CRM integration
-from crm import CRMAdapter, get_crm_adapter
+# Import simplified CRM
+from crm_simple import SimpleCRM, get_crm
 from config import settings
 
-# Configure logging
+# Import AI engine
+from ai_engine import AIGuidanceEngine, GuidanceRequest
+
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ONBOARD.AI CRM Backend", version="2.0.0")
+# ============= LOAD ACTION KNOWLEDGE BASE =============
+# Load the project's KB file. The file in the repo is `action_kb.yaml`.
+with open('action_kb.yaml', 'r', encoding='utf-8') as f:
+    ACTION_KB = yaml.safe_load(f)
+
+# ============= INITIALIZE AI ENGINE =============
+
+def initialize_ai_engine() -> Optional[AIGuidanceEngine]:
+    """Initialize OpenAI guidance engine"""
+    
+    if not settings.use_ai_guidance or not settings.openai_api_key:
+        logger.info("AI guidance disabled, using KB-only mode")
+        return None
+    
+    try:
+        logger.info(f"Initializing OpenAI engine: {settings.openai_model}")
+        
+        ai_engine = AIGuidanceEngine(
+            api_key=settings.openai_api_key,
+            model=settings.openai_model
+        )
+        
+        logger.info(f"✓ AI guidance engine initialized")
+        return ai_engine
+    
+    except Exception as e:
+        logger.error(f"Failed to initialize AI engine: {e}")
+        logger.warning("Falling back to KB-only guidance")
+        return None
+
+# ============= GLOBAL INSTANCES =============
+crm: Optional[SimpleCRM] = None
+ai_engine: Optional[AIGuidanceEngine] = None
+kb_engine = None
+
+# ============= LIFESPAN EVENTS =============
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events"""
+    global crm, ai_engine, kb_engine
+    
+    # Startup
+    logger.info("🚀 Starting ONBOARD.AI Backend...")
+    
+    # Initialize simplified CRM
+    crm = get_crm(settings.crm_api_base_url, settings.crm_api_key)
+    connected = await crm.connect()
+    if connected:
+        logger.info(f"✓ CRM connected ({settings.crm_api_base_url})")
+    else:
+        logger.warning(f"⚠ CRM connection test failed, continuing anyway")
+    
+    # Initialize AI
+    ai_engine = initialize_ai_engine()
+    
+    # Initialize KB engine
+    from guidance_generator import GuidanceGenerator
+    kb_engine = GuidanceGenerator(ACTION_KB)
+    logger.info("✓ Knowledge Base loaded")
+    
+    logger.info("✅ Backend ready!")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down...")
+    if crm:
+        await crm.disconnect()
+        logger.info("CRM disconnected")
+
+app = FastAPI(
+    title="ONBOARD.AI with Gen AI",
+    version="4.0.0",
+    lifespan=lifespan
+)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,72 +104,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============= CRM INITIALIZATION =============
-# Initialize CRM adapter based on configuration
-
-def initialize_crm() -> CRMAdapter:
-    """Initialize CRM adapter from configuration"""
-    logger.info(f"Initializing CRM adapter: {settings.crm_type}")
-    
-    if settings.crm_type == "mock":
-        return get_crm_adapter("mock")
-    
-    elif settings.crm_type == "salesforce":
-        return get_crm_adapter(
-            "salesforce",
-            username=settings.salesforce_username,
-            password=settings.salesforce_password,
-            security_token=settings.salesforce_security_token,
-            domain=settings.salesforce_domain
-        )
-    
-    elif settings.crm_type == "hubspot":
-        return get_crm_adapter(
-            "hubspot",
-            api_key=settings.hubspot_api_key,
-            access_token=settings.hubspot_access_token
-        )
-    
-    elif settings.crm_type == "generic_rest":
-        return get_crm_adapter(
-            "generic_rest",
-            base_url=settings.crm_api_base_url,
-            api_key=settings.crm_api_key,
-            api_secret=settings.crm_api_secret
-        )
-    
-    else:
-        logger.warning(f"Unknown CRM type: {settings.crm_type}, falling back to mock")
-        return get_crm_adapter("mock")
-
-# Initialize CRM on startup
-crm: Optional[CRMAdapter] = None
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize CRM connection on startup"""
-    global crm
-    crm = initialize_crm()
-    connected = await crm.connect()
-    if connected:
-        logger.info(f"✓ CRM connected successfully ({settings.crm_type})")
-    else:
-        logger.error(f"✗ CRM connection failed ({settings.crm_type})")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup CRM connection on shutdown"""
-    if crm:
-        await crm.disconnect()
-        logger.info("CRM disconnected")
-
-
-
 # ============= MODELS =============
-
-class EmployeeTaskRequest(BaseModel):
-    employee_id: str
-    current_url: str
 
 class PageContext(BaseModel):
     url: str
@@ -99,6 +113,7 @@ class PageContext(BaseModel):
     dom_elements: List[str] = Field(default_factory=list)
     employee_id: str
     task_id: Optional[str] = None
+    previous_actions: List[str] = Field(default_factory=list)
 
 class OverlayAction(BaseModel):
     target_selector: str
@@ -106,462 +121,369 @@ class OverlayAction(BaseModel):
     message: str
     position: Optional[str] = "bottom"
     animation: Optional[str] = "pulse"
-    wait_for_element: Optional[bool] = True
+    priority: Optional[int] = 3
+    alternatives: List[str] = Field(default_factory=list)
 
 class GuidanceResponse(BaseModel):
     actions: List[OverlayAction]
     tip: Optional[str] = None
+    explanation: Optional[str] = None
     step_number: int
     total_steps: int
     task_complete: bool = False
-    next_task: Optional[Dict] = None
+    confidence: Optional[float] = None
+    next_step_prediction: Optional[str] = None
+    ai_generated: bool = False
 
-class TaskProgressUpdate(BaseModel):
-    employee_id: str
-    task_id: str
-    step_completed: int
-    action_taken: Optional[str] = None
-    metadata: Optional[Dict] = None
+class AIGuidanceToggle(BaseModel):
+    enabled: bool
 
 # ============= API ENDPOINTS =============
 
 @app.get("/")
 def read_root():
     return {
-        "message": "ONBOARD.AI CRM Backend",
-        "version": "2.0.0",
-        "status": "active",
-        "crm_connected": True
+        "message": "ONBOARD.AI with Generative AI",
+        "version": "4.0.0",
+        "features": ["AI Guidance", "KB Fallback", "CRM Integration"],
+        "ai_enabled": settings.use_ai_guidance,
+        "ai_provider": settings.ai_provider if settings.use_ai_guidance else None
     }
-
-@app.post("/api/employee/task")
-async def get_employee_task(request: EmployeeTaskRequest):
-    """
-    Fetch active onboarding tasks for employee from CRM
-    Returns the highest priority task relevant to current URL
-    """
-    employee = await crm.get_employee(request.employee_id)
-    
-    if not employee:
-        raise HTTPException(status_code=404, detail="Employee not found in CRM")
-    
-    # Get all tasks for employee
-    all_tasks = await crm.get_employee_tasks(request.employee_id)
-    
-    # Filter tasks relevant to current URL
-    relevant_tasks = [
-        task for task in all_tasks
-        if is_task_relevant_to_url(task, request.current_url)
-    ]
-    
-    if not relevant_tasks:
-        return {
-            "has_active_task": False,
-            "message": "No active task for this website",
-            "employee": employee,
-            "upcoming_tasks": [t for t in all_tasks if t['status'] == 'pending'][:3]
-        }
-    
-    # Return highest priority active task
-    current_task = relevant_tasks[0]
-    
-    return {
-        "has_active_task": True,
-        "employee": {
-            "id": request.employee_id,
-            **employee
-        },
-        "task": current_task,
-        "total_tasks_remaining": len([t for t in all_tasks if t['status'] != 'completed'])
-    }
-
-def is_task_relevant_to_url(task: Dict, url: str) -> bool:
-    """Check if task is relevant to current URL"""
-    platform = task.get('platform', '')
-    
-    # Only show in-progress or newly assigned tasks
-    if task['status'] not in ['in_progress', 'assigned']:
-        return False
-    
-    return platform in url.lower()
 
 @app.post("/api/guidance", response_model=GuidanceResponse)
-async def get_guidance(context: PageContext):
-    """
-    Generate context-aware guidance for current page
-    Uses page analysis to detect progress automatically
-    """
+async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
+    """Generate AI-powered or KB-based guidance"""
+    
     employee = await crm.get_employee(context.employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     
     # Get current task
-    tasks = await crm.get_employee_tasks(context.employee_id)
-    current_task = None
+    tasks = await crm.get_tasks(context.employee_id)
     
     if context.task_id:
         current_task = next((t for t in tasks if t['id'] == context.task_id), None)
     else:
-        # Get first relevant task
-        current_task = next((t for t in tasks if is_task_relevant_to_url(t, context.url)), None)
+        # Find relevant task
+        current_task = None
+        for task in tasks:
+            if task['status'] in ['in_progress', 'assigned']:
+                platform = task.get('platform', '')
+                if platform and platform in context.url.lower():
+                    current_task = task
+                    break
     
     if not current_task:
         raise HTTPException(status_code=404, detail="No active task found")
     
-    # Auto-detect progress from page context
-    progress_detected = await detect_progress_from_context(context, current_task, context.employee_id)
+    # Parse task type
+    platform = current_task.get('platform', '')
+    action_id = current_task['type'].replace(f"{platform}_", "") if platform else current_task['type']
     
-    if progress_detected:
-        # Refresh task data after auto-progress
-        tasks = await crm.get_employee_tasks(context.employee_id)
-        current_task = next((t for t in tasks if t['id'] == current_task['id']), current_task)
-    
-    # Generate contextual guidance
-    guidance = generate_contextual_guidance(context, current_task)
-    
-    # Check if task is complete and get next task
-    if guidance.task_complete:
-        next_tasks = [t for t in tasks if t['status'] in ['pending', 'assigned']]
-        if next_tasks:
-            guidance.next_task = {
-                "id": next_tasks[0]['id'],
-                "title": next_tasks[0]['title'],
-                "platform": next_tasks[0]['platform']
-            }
-    
-    return guidance
-
-async def detect_progress_from_context(context: PageContext, task: Dict, 
-                                      employee_id: str) -> bool:
-    """
-    Automatically detect task progress based on page context
-    Returns True if progress was updated
-    """
-    url = context.url.lower()
-    visible_text = context.visible_text.lower()
-    dom_elements = ' '.join(context.dom_elements).lower()
-    
-    current_step = task['steps_completed']
-    task_type = task['type']
-    updated = False
-    
-    if task_type == "github_repo_creation":
-        # Step 0 -> 1: User navigated to create repo page
-        if current_step == 0 and "github.com/new" in url:
-            await crm.update_task_progress(task['id'], employee_id, 1, 'in_progress')
-            await crm.log_employee_action(employee_id, "navigated_to_create_repo", 
-                                         {"url": context.url})
-            updated = True
-        
-        # Step 1 -> 2: User is on /new page and has filled form (detect via DOM)
-        elif current_step == 1 and "github.com/new" in url:
-            # Check if form looks filled (repository name input has value)
-            if 'value=' in dom_elements and 'repository' in dom_elements:
-                # Don't auto-advance here - wait for actual submission
-                pass
-        
-        # Step 2 -> 3: Repository created (now on repo page)
-        elif current_step <= 2 and is_repository_page(context):
-            await crm.update_task_progress(task['id'], employee_id, 
-                                          task['total_steps'], 'completed')
-            await crm.log_employee_action(employee_id, "repository_created", 
-                                         {"url": context.url})
-            updated = True
-    
-    elif task_type == "github_clone":
-        # Detect clone workflow progress
-        if current_step == 0 and ("/repos" in url or is_repository_page(context)):
-            await crm.update_task_progress(task['id'], employee_id, 1, 'in_progress')
-            updated = True
-        
-        elif current_step == 1 and "code-button" in dom_elements:
-            # User clicked code button
-            await crm.update_task_progress(task['id'], employee_id, 2, 'in_progress')
-            updated = True
-    
-    elif task_type == "github_pull_request":
-        # Detect PR workflow
-        if current_step == 0 and ("/pull/new" in url or "/compare" in url):
-            await crm.update_task_progress(task['id'], employee_id, 1, 'in_progress')
-            updated = True
-        
-        elif current_step <= 3 and "/pull/" in url and "/pull/new" not in url:
-            # PR created (on PR view page)
-            await crm.update_task_progress(task['id'], employee_id, 
-                                          task['total_steps'], 'completed')
-            updated = True
-    
-    return updated
-
-def generate_contextual_guidance(context: PageContext, task: Dict) -> GuidanceResponse:
-    """Generate step-by-step overlay guidance based on page context"""
-    url = context.url.lower()
-    page_title = context.page_title.lower()
-    dom_elements = ' '.join(context.dom_elements).lower()
-    
-    actions = []
-    tip = None
-    step_number = task['steps_completed'] + 1
-    total_steps = task['total_steps']
-    task_complete = task['status'] == 'completed'
-    
-    if task_complete:
-        actions = [
-            OverlayAction(
-                target_selector="body",
-                action_type="tooltip",
-                message=f"🎉 Task completed: {task['title']}",
-                position="top",
-                animation="fade"
+    try:
+        # Use AI if available, otherwise KB
+        if ai_engine:
+            # Prepare AI request
+            ai_request = GuidanceRequest(
+                task_title=current_task['title'],
+                task_description=current_task.get('description', ''),
+                current_url=context.url,
+                page_title=context.page_title,
+                visible_text=context.visible_text,
+                dom_elements=context.dom_elements,
+                step_number=current_task['steps_completed'] + 1,
+                total_steps=current_task['total_steps'],
+                previous_actions=context.previous_actions
             )
-        ]
+            
+            ai_guidance = await ai_engine.generate_guidance(ai_request)
+            
+            # Convert AI response to our format
+            overlay_actions = []
+            for action in ai_guidance.actions:
+                overlay_actions.append(OverlayAction(
+                    target_selector=action.selector,
+                    action_type=action.action_type,
+                    message=action.message,
+                    position="bottom",
+                    animation="pulse" if action.action_type in ['click', 'submit'] else "fade",
+                    priority=action.priority,
+                    alternatives=action.alternatives
+                ))
+        else:
+            # Fallback to KB
+            kb_guidance = kb_engine.generate_guidance(platform, action_id, context, current_task['steps_completed'])
+            overlay_actions = kb_guidance.get('actions', [])
+        
+        # Check if task complete
+        detected_step = current_task['steps_completed']
+        task_complete = detected_step >= current_task['total_steps'] - 1
+        
+        # Update progress if needed
+        if detected_step > current_task['steps_completed']:
+            background_tasks.add_task(
+                crm.update_task,
+                current_task['id'],
+                context.employee_id,
+                detected_step,
+                'completed' if task_complete else 'in_progress'
+            )
+        
         return GuidanceResponse(
-            actions=actions,
-            tip="Great job! Move on to your next task.",
-            step_number=total_steps,
-            total_steps=total_steps,
-            task_complete=True
+            actions=overlay_actions,
+            tip=ai_guidance.tip,
+            explanation=ai_guidance.explanation,
+            step_number=current_task['steps_completed'] + 1,
+            total_steps=current_task['total_steps'],
+            task_complete=task_complete,
+            confidence=ai_guidance.confidence,
+            next_step_prediction=ai_guidance.next_step_prediction,
+            ai_generated=settings.use_ai_guidance
         )
     
-    # ===== GITHUB REPO CREATION =====
-    if task['type'] == "github_repo_creation":
+    except Exception as e:
+        logger.error(f"Guidance generation failed: {e}")
         
-        if step_number == 1:
-            # Step 1: Guide user to create new repo (works on any GitHub page)
-            actions = [
-                # Navbar '+' button (works on all GitHub pages)
+        # Return generic fallback
+        return GuidanceResponse(
+            actions=[
                 OverlayAction(
-                    target_selector="summary[aria-label*='Create'], summary[aria-label*='new'], [data-target='create-menu.button']",
-                    action_type="highlight",
-                    message="👋 Click the '+' menu in the top navigation bar",
-                    position="bottom",
-                    animation="pulse"
-                ),
-                # Left sidebar button (on dashboard/home)
-                OverlayAction(
-                    target_selector="a[href='/new'], a[href*='/repositories/new']",
-                    action_type="highlight",
-                    message="Or click 'New' here to create a repository",
-                    position="right",
-                    animation="pulse"
-                )
-            ]
-            tip = "💡 A repository is like a project folder that tracks all your code changes."
-        
-        elif step_number == 2 and "github.com/new" in url:
-            # Step 2: Fill out repository form
-            actions = [
-                OverlayAction(
-                    target_selector="input#repository_name, input[name='repository[name]']",
-                    action_type="highlight",
-                    message="📝 Enter 'my-first-project' as your repository name",
-                    position="bottom",
-                    animation="pulse"
-                ),
-                OverlayAction(
-                    target_selector="input#repository_description, textarea[name='repository[description]']",
+                    target_selector="body",
                     action_type="tooltip",
-                    message="Add a description (optional but recommended)",
-                    position="bottom"
-                ),
-                OverlayAction(
-                    target_selector="input#repository_auto_init, input[name='repository[auto_init]']",
-                    action_type="highlight",
-                    message="✅ Check this to add a README file",
-                    position="right",
-                    animation="pulse"
-                ),
-                OverlayAction(
-                    target_selector="button[type='submit'], button.btn-primary[data-disable-with]",
-                    action_type="highlight",
-                    message="🚀 Click 'Create repository' when ready!",
-                    position="top",
-                    animation="pulse"
+                    message=f"Continue with: {current_task['title']}",
+                    position="top"
                 )
-            ]
-            tip = "💡 Pro tip: Always add a README - it's the first thing people see!"
-    
-    # ===== GITHUB CLONE =====
-    elif task['type'] == "github_clone":
-        
-        if step_number == 1:
-            actions = [
-                OverlayAction(
-                    target_selector="button#code-button, button[data-target*='get-repo']",
-                    action_type="highlight",
-                    message="Click the 'Code' button",
-                    position="bottom",
-                    animation="pulse"
-                )
-            ]
-            tip = "You'll copy the URL to clone this repository"
-        
-        elif step_number == 2:
-            actions = [
-                OverlayAction(
-                    target_selector="input[aria-label*='Clone'], input.js-url-field",
-                    action_type="highlight",
-                    message="Copy this clone URL",
-                    position="bottom"
-                ),
-                OverlayAction(
-                    target_selector=".clipboard-copy-text, button[aria-label*='Copy']",
-                    action_type="arrow",
-                    message="Click to copy",
-                    position="right",
-                    animation="pulse"
-                )
-            ]
-            tip = "Next: Open terminal and run 'git clone [paste-url]'"
-    
-    # ===== GITHUB PULL REQUEST =====
-    elif task['type'] == "github_pull_request":
-        
-        if step_number <= 3 and ("/pull/new" in url or "/compare" in url):
-            actions = [
-                OverlayAction(
-                    target_selector="input#pull_request_title, input[name='pull_request[title]']",
-                    action_type="highlight",
-                    message="Enter a clear title for your pull request",
-                    position="bottom",
-                    animation="pulse"
-                ),
-                OverlayAction(
-                    target_selector="textarea#pull_request_body, textarea[name='pull_request[body]']",
-                    action_type="tooltip",
-                    message="Describe what changes you made and why",
-                    position="bottom"
-                ),
-                OverlayAction(
-                    target_selector="button.btn-primary[type='submit']",
-                    action_type="highlight",
-                    message="Click 'Create pull request' when ready",
-                    position="top",
-                    animation="pulse"
-                )
-            ]
-            tip = "A good PR description helps reviewers understand your changes"
-    
-    # Default fallback
-    if not actions:
-        actions = [
-            OverlayAction(
-                target_selector="body",
-                action_type="tooltip",
-                message=f"Continue with: {task['title']} (Step {step_number}/{total_steps})",
-                position="top"
-            )
-        ]
-        tip = "Navigate to the correct page to see guidance"
-    
-    return GuidanceResponse(
-        actions=actions,
-        tip=tip,
-        step_number=step_number,
-        total_steps=total_steps,
-        task_complete=False
-    )
+            ],
+            tip="Navigate to complete this step",
+            explanation="We're here to help!",
+            step_number=current_task['steps_completed'] + 1,
+            total_steps=current_task['total_steps'],
+            task_complete=False,
+            ai_generated=False
+        )
 
-def is_repository_page(context: PageContext) -> bool:
-    """Detect if current page is a GitHub repository page"""
-    parts = [p for p in urlparse(context.url).path.split('/') if p]
+@app.post("/api/chat/parse-task")
+async def parse_task_from_chat(msg: Dict):
+    """Parse task with AI enhancement"""
     
-    if len(parts) < 2:
-        return False
+    from action_matcher import ActionMatcher  # Your existing matcher
+    action_matcher = ActionMatcher(ACTION_KB)
     
-    # Ignore non-repo pages
-    if parts[0] in {"orgs", "settings", "notifications", "marketplace", "new", "search"}:
-        return False
+    # Get basic matches from KB
+    matches = action_matcher.match(msg['message'], msg.get('context'))
     
-    # Check for repo indicators
-    dom_text = ' '.join(context.dom_elements).lower()
-    visible = context.visible_text.lower()
+    # If AI enabled and low confidence, use AI to improve matching
+    if settings.use_ai_guidance and ai_engine and (not matches or matches[0]['confidence'] < 0.7):
+        try:
+            # Use AI to understand intent better
+            ai_prompt = f"""User request: "{msg['message']}"
+
+Available platforms: GitHub, Slack, Jira, Figma
+Current URL: {msg.get('context', {}).get('url', 'unknown')}
+
+What is the user trying to accomplish? Return JSON:
+{{
+    "intent": "clear description",
+    "platform": "best matching platform",
+    "action": "specific action",
+    "confidence": 0.0-1.0
+}}"""
+            
+            # Get AI interpretation (OpenAI only)
+            response = await ai_engine.client.chat.completions.create(
+                model=ai_engine.model,
+                messages=[{"role": "user", "content": ai_prompt}],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            import json
+            ai_intent = json.loads(response.choices[0].message.content)
+            
+            # Re-match with AI-clarified intent
+            clarified_query = f"{ai_intent['platform']} {ai_intent['action']}"
+            matches = action_matcher.match(clarified_query, msg.get('context'))
+            
+            if matches:
+                matches[0]['confidence'] = min(matches[0]['confidence'] + 0.2, 1.0)
+        
+        except Exception as e:
+            logger.error(f"AI intent parsing failed: {e}")
     
-    return any([
-        "#code-tab" in dom_text,
-        "repository-content" in visible,
-        "file-navigation" in dom_text,
-        all(indicator in visible for indicator in ["code", "issues", "pull"])
-    ])
+    # Return matches
+    if not matches:
+        return {
+            "understood": False,
+            "message": "I couldn't find a matching task. Can you be more specific?"
+        }
+    
+    best_match = matches[0]
+    
+    return {
+        "understood": True,
+        "task": {
+            "platform": best_match['platform'],
+            "action_id": best_match['action_id'] if 'action_id' in best_match else best_match['platform'] + "_action",
+            "title": best_match['title'],
+            "confidence": best_match['confidence']
+        },
+        "message": f"Got it! I'll guide you through: {best_match['title']}",
+        "matches": matches[:3],
+        "ai_enhanced": settings.use_ai_guidance
+    }
+
+@app.post("/api/ai/toggle")
+async def toggle_ai_guidance(toggle: AIGuidanceToggle):
+    """Enable/disable AI guidance at runtime"""
+    global settings
+    settings.use_ai_guidance = toggle.enabled
+    
+    return {
+        "ai_enabled": settings.use_ai_guidance,
+        "message": f"AI guidance {'enabled' if toggle.enabled else 'disabled'}"
+    }
+
+@app.get("/api/ai/status")
+async def get_ai_status():
+    """Get AI engine status"""
+    return {
+        "ai_enabled": settings.use_ai_guidance,
+        "provider": "openai",
+        "model": settings.openai_model,
+        "engine_initialized": ai_engine is not None,
+        "kb_loaded": kb_engine is not None
+    }
+
+@app.post("/api/employee/task")
+async def get_employee_task(request: Dict):
+    """Fetch active tasks"""
+    employee_id = request['employee_id']
+    current_url = request['current_url']
+    
+    employee = await crm.get_employee(employee_id)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    all_tasks = await crm.get_tasks(employee_id)
+    
+    relevant_tasks = []
+    for task in all_tasks:
+        if task['status'] in ['in_progress', 'assigned']:
+            platform = task.get('platform', '')
+            if platform and platform in current_url.lower():
+                relevant_tasks.append(task)
+    
+    if not relevant_tasks:
+        return {
+            "has_active_task": False,
+            "message": "No active task for this website",
+            "employee": employee
+        }
+    
+    return {
+        "has_active_task": True,
+        "employee": employee,
+        "task": relevant_tasks[0]
+    }
+
+@app.post("/api/chat/create-task")
+async def create_task_from_chat(data: Dict):
+    """Create CRM task from chat"""
+    employee_id = data['employee_id']
+    task_data = data['task']
+    
+    # Get step count from KB
+    try:
+        action_def = ACTION_KB['platforms'][task_data['platform']]['actions'][task_data['action_id']]
+        total_steps = len(action_def['steps'])
+    except:
+        total_steps = 5  # Default
+    
+    crm_task = await crm.create_task(
+        employee_id=employee_id,
+        title=task_data['title'],
+        type=f"{task_data['platform']}_{task_data['action_id']}",
+        platform=task_data['platform'],
+        description=f"Task created via AI chat: {task_data['title']}",
+        total_steps=total_steps
+    )
+    
+    return {
+        "success": True,
+        "task_id": crm_task['id'],
+        "message": "Task created! Starting AI-powered guidance..."
+    }
 
 @app.post("/api/task/progress")
-async def update_task_progress(data: TaskProgressUpdate):
-    """
-    Manually update task progress (when user clicks 'next step' button)
-    """
-    success = await crm.update_task_progress(
-        data.task_id,
-        data.employee_id,
-        data.step_completed,
-        'in_progress' if data.step_completed < 100 else 'completed'
+async def update_task_progress(data: Dict):
+    """Update task progress (auto-deletes when completed)"""
+    await crm.update_task(
+        data['task_id'],
+        data['employee_id'],
+        data['step_completed'],
+        'in_progress' if data['step_completed'] < 100 else 'completed'
     )
     
-    if not success:
-        raise HTTPException(status_code=404, detail="Task not found")
-    
-    # Log the action
-    await crm.log_employee_action(
-        data.employee_id,
-        data.action_taken or "manual_progress_update",
-        data.metadata or {}
-    )
-    
-    return {
-        "status": "success",
-        "message": "Progress updated",
-        "steps_completed": data.step_completed
-    }
+    return {"status": "success", "note": "Task deleted if completed"}
 
-@app.post("/api/task/submit")
-async def submit_task_action(data: Dict):
+@app.post("/api/task/create")
+async def create_task(data: Dict):
     """
-    Called when user performs a task action (e.g., clicks 'Create Repository' button)
-    This advances the task before GitHub's navigation completes
+    Manually create a new task for an employee
+    
+    Required fields:
+    - employee_id
+    - title
+    - type (e.g., 'github_repo_creation')
+    - platform (e.g., 'github.com')
+    - total_steps
+    - description (optional)
+    - priority (optional, default 99)
     """
-    employee_id = data.get("employee_id")
-    task_id = data.get("task_id")
-    action = data.get("action")  # e.g., "submit_create_repo"
-    
-    tasks = await crm.get_employee_tasks(employee_id)
-    task = next((t for t in tasks if t['id'] == task_id), None)
-    
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    
-    # Advance task based on action
-    new_step = task['steps_completed'] + 1
-    
-    await crm.update_task_progress(
-        task_id,
-        employee_id,
-        new_step,
-        'in_progress'
+    task_id = await crm.create_task(
+        employee_id=data['employee_id'],
+        task={
+            'title': data['title'],
+            'description': data.get('description', ''),
+            'type': data['type'],
+            'platform': data['platform'],
+            'total_steps': data['total_steps'],
+            'priority': data.get('priority', 99)
+        }
     )
     
-    await crm.log_employee_action(
-        employee_id,
-        action,
-        {"task_id": task_id, "step": new_step}
-    )
-    
-    return {"status": "success", "new_step": new_step}
+    if task_id:
+        return {
+            "status": "success",
+            "task_id": task_id,
+            "message": f"Task '{data['title']}' created"
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create task")
 
-@app.post("/api/feedback")
-async def store_feedback(data: dict):
-    """Store employee feedback and analytics"""
-    employee_id = data.get("employee_id")
+@app.delete("/api/task/{task_id}")
+async def delete_task(task_id: str, employee_id: str):
+    """Manually delete a task"""
+    success = await crm.delete_task(task_id, employee_id)
     
-    await crm.log_employee_action(
-        employee_id,
-        "feedback_submitted",
-        data
-    )
-    
-    return {
-        "status": "success",
-        "timestamp": datetime.now().isoformat()
-    }
+    if success:
+        return {"status": "success", "message": f"Task {task_id} deleted"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to delete task")
+
+@app.get("/api/kb/actions")
+async def list_all_actions():
+    """List all available actions from knowledge base"""
+    actions = []
+    for platform_id, platform_data in ACTION_KB['platforms'].items():
+        for action_id, action_data in platform_data['actions'].items():
+            actions.append({
+                'id': f"{platform_id}_{action_id}",
+                'platform': platform_data['name'],
+                'title': action_data['title'],
+                'steps': len(action_data['steps'])
+            })
+    return {"actions": actions}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=settings.debug)

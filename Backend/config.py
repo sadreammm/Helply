@@ -1,42 +1,31 @@
 """
-Configuration Management for ONBOARD.AI
-Loads settings from environment variables and .env file
+Simplified Configuration for ONBOARD.AI
+Only OpenAI + Generic REST API
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional, Literal
+from typing import Optional
 
 class Settings(BaseSettings):
     """Application settings from environment variables"""
     
-    # CRM Selection
-    crm_type: Literal["salesforce", "hubspot", "generic_rest", "mock"] = "mock"
+    # ============= AI CONFIGURATION (OpenAI Only) =============
+    use_ai_guidance: bool = True
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4-turbo-preview"
     
-    # Salesforce
-    salesforce_username: Optional[str] = None
-    salesforce_password: Optional[str] = None
-    salesforce_security_token: Optional[str] = None
-    salesforce_domain: str = "login"  # 'login' for production, 'test' for sandbox
+    # ============= CRM CONFIGURATION (Generic REST API Only) =============
+    crm_api_base_url: str = "http://localhost:3000/api"
+    crm_api_key: str = "your-api-key"
     
-    # HubSpot
-    hubspot_api_key: Optional[str] = None
-    hubspot_access_token: Optional[str] = None
-    
-    # Generic REST API
-    crm_api_base_url: Optional[str] = None
-    crm_api_key: Optional[str] = None
-    crm_api_secret: Optional[str] = None
-    
-    # Database
-    database_url: str = "sqlite:///./onboard_cache.db"
-    
-    # Application
+    # ============= APPLICATION =============
     debug: bool = True
     log_level: str = "INFO"
     
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False
+        case_sensitive=False,
+        extra="ignore"
     )
 
 # Global settings instance
