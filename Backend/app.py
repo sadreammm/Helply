@@ -1,5 +1,3 @@
-# app.py - FIXED VERSION with better step detection
-
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
