@@ -1,6 +1,6 @@
 """
-Simple CRM REST API Server
-Runs on localhost:3000 and provides task management endpoints
+Simple CRM REST API Server - DEMO VERSION
+Includes hardcoded tasks for smooth demo flow
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +25,7 @@ employees: Dict[str, Dict] = {}
 tasks: Dict[str, Dict] = {}
 task_counter = 1
 
-# Initialize demo data
+# Initialize demo data with multiple tasks
 def init_demo_data():
     global task_counter
     
@@ -44,37 +44,94 @@ def init_demo_data():
         "role": "DevOps Engineer"
     }
     
-    # Demo tasks
+    # Demo tasks for emp_001 - Multiple GitHub tasks for smooth demo
     tasks["task_001"] = {
         "id": "task_001",
         "employee_id": "emp_001",
         "title": "Create Your First GitHub Repository",
         "description": "Learn how to create a repository on GitHub",
-        "type": "github_repo_creation",
+        "type": "github_create_repo",
         "platform": "github.com",
         "status": "in_progress",
         "steps_completed": 0,
-        "total_steps": 3,
+        "total_steps": 4,
         "priority": 1,
         "created_at": datetime.now().isoformat()
     }
     
     tasks["task_002"] = {
         "id": "task_002",
-        "employee_id": "emp_002",
-        "title": "Create Your First GitHub Repository",
-        "description": "Learn how to create a repository on GitHub",
-        "type": "github_repo_creation",
+        "employee_id": "emp_001",
+        "title": "Create a New File in GitHub",
+        "description": "Add your first code file to the repository",
+        "type": "github_create_file",
+        "platform": "github.com",
+        "status": "pending",
+        "steps_completed": 0,
+        "total_steps": 6,
+        "priority": 2,
+        "created_at": datetime.now().isoformat()
+    }
+    
+    tasks["task_003"] = {
+        "id": "task_003",
+        "employee_id": "emp_001",
+        "title": "Edit Your README File",
+        "description": "Customize your project's README",
+        "type": "github_edit_readme",
+        "platform": "github.com",
+        "status": "pending",
+        "steps_completed": 0,
+        "total_steps": 7,
+        "priority": 3,
+        "created_at": datetime.now().isoformat()
+    }
+    
+    tasks["task_004"] = {
+        "id": "task_004",
+        "employee_id": "emp_001",
+        "title": "Create a GitHub Issue",
+        "description": "Learn how to track bugs and features",
+        "type": "github_create_issue",
+        "platform": "github.com",
+        "status": "pending",
+        "steps_completed": 0,
+        "total_steps": 5,
+        "priority": 4,
+        "created_at": datetime.now().isoformat()
+    }
+    
+    tasks["task_005"] = {
+        "id": "task_005",
+        "employee_id": "emp_001",
+        "title": "Fork a Repository",
+        "description": "Make your own copy of a project",
+        "type": "github_fork",
         "platform": "github.com",
         "status": "pending",
         "steps_completed": 0,
         "total_steps": 3,
+        "priority": 5,
+        "created_at": datetime.now().isoformat()
+    }
+    
+    # Tasks for emp_002
+    tasks["task_006"] = {
+        "id": "task_006",
+        "employee_id": "emp_002",
+        "title": "Create Your First GitHub Repository",
+        "description": "Learn how to create a repository on GitHub",
+        "type": "github_create_repo",
+        "platform": "github.com",
+        "status": "pending",
+        "steps_completed": 0,
+        "total_steps": 4,
         "priority": 1,
         "created_at": datetime.now().isoformat()
     }
     
-    task_counter = 3
-    print("✓ Demo data initialized (2 employees, 2 tasks)")
+    task_counter = 7
+    print("✓ Demo data initialized (2 employees, 6 tasks - GitHub only)")
 
 init_demo_data()
 
@@ -102,7 +159,7 @@ class Task(BaseModel):
 @app.get("/")
 def root():
     return {
-        "message": "Simple CRM API",
+        "message": "Simple CRM API - DEMO VERSION",
         "version": "1.0.0",
         "employees": len(employees),
         "tasks": len(tasks)
@@ -253,12 +310,17 @@ def reset_data():
     return {"status": "reset", "message": "Demo data reloaded"}
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("🚀 Starting Simple CRM API Server")
-    print("=" * 50)
+    print("=" * 60)
+    print("🚀 Starting Simple CRM API Server - DEMO VERSION")
+    print("=" * 60)
     print("Server: http://localhost:3000")
     print("API Docs: http://localhost:3000/docs")
     print("Health: http://localhost:3000/api/health")
-    print("=" * 50)
+    print("\n📋 Demo Tasks Loaded:")
+    print("  - Create GitHub Repository (4 steps)")
+    print("  - Create a New File (6 steps)")
+    print("  - Edit README File (7 steps)")
+    print("  - Create a New Branch (3 steps)")
+    print("=" * 60)
     
     uvicorn.run(app, host="0.0.0.0", port=3000, log_level="info")

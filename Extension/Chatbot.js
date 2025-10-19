@@ -1,4 +1,4 @@
-// Chatbot.js - FIXED VERSION
+// Chatbot.js - ENHANCED WITH TASK LIST
 
 window.__ONBOARD = window.__ONBOARD || { API_BASE: 'http://localhost:8000', EMPLOYEE_ID: 'emp_001' };
 const API_BASE = window.__ONBOARD.API_BASE;
@@ -8,6 +8,7 @@ class OnboardPopup {
     constructor() {
         this.currentView = 'task';
         this.currentTask = null;
+        this.allTasks = [];
         this.currentContext = null;
         this.pendingTask = null;
         
@@ -28,7 +29,7 @@ class OnboardPopup {
     
     async init() {
         await this.loadContext();
-        await this.loadTask();
+        await this.loadAllTasks();
         
         this.taskModeBtn.addEventListener('click', () => this.switchView('task'));
         this.chatModeBtn.addEventListener('click', () => this.switchView('chat'));
@@ -81,8 +82,9 @@ class OnboardPopup {
         }
     }
     
-    async loadTask() {
+    async loadAllTasks() {
         try {
+            // Fetch all tasks for the employee
             const response = await fetch(`${API_BASE}/api/employee/task`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -94,87 +96,137 @@ class OnboardPopup {
             
             const data = await response.json();
             
+            // Get all tasks from CRM
+            const tasksResponse = await fetch(`${API_BASE}/api/employees/${EMPLOYEE_ID}/tasks`);
+            const allTasks = await tasksResponse.json();
+            
+            this.allTasks = Array.isArray(allTasks) ? allTasks : [];
+            
             if (data.has_active_task) {
                 this.currentTask = data.task;
-                this.displayTask(data.task, data.employee);
-            } else {
-                this.displayNoTask();
             }
+            
+            this.displayTaskList();
+            
         } catch (error) {
-            console.error('Failed to load task:', error);
+            console.error('Failed to load tasks:', error);
             this.displayError();
         }
     }
     
-    displayTask(task, employee) {
-        const progress = (task.steps_completed / task.total_steps) * 100;
+    displayTaskList() {
+        if (this.allTasks.length === 0) {
+            this.displayNoTask();
+            return;
+        }
         
-        const html = `
-            <div class="current-task-card">
-                <div class="task-header">
-                    <div class="task-icon">📋</div>
-                    <div class="task-info">
-                        <div class="task-title">${task.title}</div>
-                        <div class="task-progress-text">Step ${task.steps_completed + 1} of ${task.total_steps}</div>
+        // Sort tasks: in_progress first, then by priority
+        const sortedTasks = [...this.allTasks].sort((a, b) => {
+            if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
+            if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
+            return a.priority - b.priority;
+        });
+        
+        let html = '<div class="section-title">Your Tasks</div>';
+        
+        sortedTasks.forEach(task => {
+            const progress = (task.steps_completed / task.total_steps) * 100;
+            const isActive = task.id === this.currentTask?.id;
+            
+            html += `
+                <div class="task-card ${isActive ? 'active-task' : ''}" data-task-id="${task.id}">
+                    <div class="task-header">
+                        <div class="task-icon">${this.getTaskIcon(task.platform)}</div>
+                        <div class="task-info">
+                            <div class="task-title">${task.title}</div>
+                            <div class="task-progress-text">${task.steps_completed} / ${task.total_steps} steps</div>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progress}%"></div>
+                    </div>
+                    <div class="task-meta">
+                        <span class="status-badge status-${task.status === 'completed' ? 'complete' : 'active'}">
+                            ${task.status === 'completed' ? '✓ Complete' : task.status === 'in_progress' ? '⏱ Active' : '📋 Pending'}
+                        </span>
+                        <span class="task-platform">${this.capitalize(task.platform)}</span>
+                    </div>
+                    <div class="task-actions">
+                        <button class="btn btn-primary start-task-btn" data-task-id="${task.id}">
+                            ${task.steps_completed > 0 ? '▶ Continue' : '🚀 Start'}
+                        </button>
+                        <button class="btn btn-secondary delete-task-btn" data-task-id="${task.id}">🗑</button>
                     </div>
                 </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${progress}%"></div>
-                </div>
-                <div class="task-meta">
-                    <span class="status-badge status-${task.status === 'completed' ? 'complete' : 'active'}">
-                        ${task.status === 'completed' ? '✓ Complete' : '⏱ In Progress'}
-                    </span>
-                    <span class="task-platform">${this.capitalize(task.platform)}</span>
-                </div>
-                <div class="task-actions">
-                    <button class="btn btn-primary" id="startGuidanceBtn">
-                        ${task.steps_completed > 0 ? '▶ Continue Guidance' : '🚀 Start Guidance'}
-                    </button>
-                    <button class="btn btn-secondary" id="refreshBtn">🔄</button>
-                </div>
+            `;
+        });
+        
+        html += `
+            <div style="margin-top: 20px;">
+                <div class="section-title">Need something else?</div>
+                <button class="btn btn-primary" style="width: 100%;" id="createNewTaskBtn">
+                    ➕ Create New Task
+                </button>
             </div>
-            
-            <div class="section-title">Employee Info</div>
-            <div class="info-grid">
-                <div class="info-item">
-                    <div class="info-label">Name</div>
-                    <div class="info-value">${employee.name}</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">Role</div>
-                    <div class="info-value">${employee.role}</div>
-                </div>
-            </div>
-            
-            <div class="section-title">Need different task?</div>
-            <button class="btn btn-primary" style="width: 100%;" id="switchToChatBtn">
-                💬 Ask AI Assistant
-            </button>
         `;
         
         this.taskContent.innerHTML = html;
         
-        document.getElementById('startGuidanceBtn').addEventListener('click', () => {
-            this.startGuidance(task);
+        // Add event listeners
+        document.querySelectorAll('.start-task-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const taskId = e.target.dataset.taskId;
+                const task = this.allTasks.find(t => t.id === taskId);
+                if (task) this.startGuidance(task);
+            });
         });
         
-        document.getElementById('refreshBtn').addEventListener('click', () => {
-            this.loadTask();
+        document.querySelectorAll('.delete-task-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const taskId = e.target.dataset.taskId;
+                if (confirm('Delete this task?')) {
+                    await this.deleteTask(taskId);
+                }
+            });
         });
         
-        document.getElementById('switchToChatBtn').addEventListener('click', () => {
+        document.getElementById('createNewTaskBtn')?.addEventListener('click', () => {
             this.switchView('chat');
         });
+    }
+    
+    getTaskIcon(platform) {
+        const icons = {
+            'github': '🐙',
+            'github.com': '🐙',
+            'slack': '💬',
+            'slack.com': '💬',
+            'jira': '📋',
+            'atlassian': '📋',
+            'figma': '🎨'
+        };
+        return icons[platform.toLowerCase()] || '📋';
+    }
+    
+    async deleteTask(taskId) {
+        try {
+            await fetch(`${API_BASE}/api/tasks/${taskId}?employee_id=${EMPLOYEE_ID}`, {
+                method: 'DELETE'
+            });
+            await this.loadAllTasks();
+        } catch (error) {
+            console.error('Failed to delete task:', error);
+            alert('Failed to delete task');
+        }
     }
     
     displayNoTask() {
         const html = `
             <div class="no-task">
                 <div class="no-task-icon">✅</div>
-                <p><strong>No active tasks on this page</strong></p>
+                <p><strong>No active tasks</strong></p>
                 <p style="margin-top: 8px; font-size: 13px; line-height: 1.5;">
-                    Navigate to a supported platform or chat with the AI assistant to create a new task.
+                    You're all caught up! Create a new task using the AI assistant.
                 </p>
             </div>
             <div style="padding: 0 16px;">
@@ -182,7 +234,7 @@ class OnboardPopup {
                     💬 Chat with AI Assistant
                 </button>
                 <button class="btn btn-secondary" style="width: 100%;" id="checkAgainBtn">
-                    🔄 Check Again
+                    🔄 Refresh Tasks
                 </button>
             </div>
         `;
@@ -194,7 +246,7 @@ class OnboardPopup {
         });
         
         document.getElementById('checkAgainBtn').addEventListener('click', () => {
-            this.loadTask();
+            this.loadAllTasks();
         });
     }
     
@@ -217,13 +269,13 @@ class OnboardPopup {
         this.taskContent.innerHTML = html;
         
         document.getElementById('retryBtn').addEventListener('click', () => {
-            this.loadTask();
+            this.loadAllTasks();
         });
     }
     
     async startGuidance(task) {
         try {
-            // FIXED: Ensure content script is injected
+            // Ensure content script is injected
             await chrome.scripting.executeScript({
                 target: { tabId: this.currentContext.tabId },
                 files: ['content.js']
@@ -231,7 +283,6 @@ class OnboardPopup {
                 console.log('Content script already injected');
             });
             
-            // FIXED: Wait a bit for script to initialize
             await new Promise(resolve => setTimeout(resolve, 300));
             
             // Send message to start guidance
@@ -243,7 +294,6 @@ class OnboardPopup {
                     console.error('Failed to send message:', chrome.runtime.lastError);
                     alert('Please refresh the page and try again.');
                 } else {
-                    // Close popup only if message was sent successfully
                     window.close();
                 }
             });
@@ -405,72 +455,18 @@ class OnboardPopup {
             const data = await response.json();
             
             if (data.success) {
-                this.addMessage('✅ Task created! Injecting guidance system...', 'ai');
+                this.addMessage('✅ Task created! Switching to Tasks tab...', 'ai');
                 
-                // FIXED: Proper script injection and message sending
-                try {
-                    // Inject content script
-                    await chrome.scripting.executeScript({
-                        target: { tabId: this.currentContext.tabId },
-                        files: ['content.js']
-                    }).catch(() => {
-                        console.log('Content script already present');
-                    });
-                    
-                    // Wait for initialization
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // Send start guidance message with retry
-                    let retries = 3;
-                    let success = false;
-                    
-                    while (retries > 0 && !success) {
-                        try {
-                            await new Promise((resolve, reject) => {
-                                chrome.tabs.sendMessage(
-                                    this.currentContext.tabId, 
-                                    { 
-                                        action: 'start_guidance',
-                                        task_id: data.task_id
-                                    },
-                                    (response) => {
-                                        if (chrome.runtime.lastError) {
-                                            reject(chrome.runtime.lastError);
-                                        } else {
-                                            resolve(response);
-                                        }
-                                    }
-                                );
-                            });
-                            success = true;
-                        } catch (err) {
-                            retries--;
-                            if (retries > 0) {
-                                await new Promise(resolve => setTimeout(resolve, 300));
-                            }
-                        }
-                    }
-                    
-                    if (success) {
-                        this.addMessage('🎉 Guidance is now active! Check the page.', 'ai');
-                        
-                        // Update task view
-                        setTimeout(() => {
-                            this.loadTask();
-                        }, 1000);
-                        
-                        // Close popup
-                        setTimeout(() => {
-                            window.close();
-                        }, 2000);
-                    } else {
-                        throw new Error('Failed to activate guidance after retries');
-                    }
-                    
-                } catch (scriptError) {
-                    console.error('Script injection error:', scriptError);
-                    this.addMessage('⚠️ Please refresh the page and click the extension icon to start guidance.', 'ai');
-                }
+                // Wait a bit for backend to process
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Reload task list
+                await this.loadAllTasks();
+                
+                // Switch to task view
+                setTimeout(() => {
+                    this.switchView('task');
+                }, 800);
             }
         } catch (error) {
             this.addMessage('Failed to create task. Please make sure the backend is running.', 'ai');

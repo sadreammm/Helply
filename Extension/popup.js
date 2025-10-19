@@ -1,15 +1,20 @@
-// popup.js - Extension popup script
-
 window.__ONBOARD = window.__ONBOARD || { API_BASE: 'http://localhost:8000', EMPLOYEE_ID: 'emp_001' };
 const API_BASE = window.__ONBOARD.API_BASE;
-const EMPLOYEE_ID = window.__ONBOARD.EMPLOYEE_ID; // In production, get from storage/auth
+const EMPLOYEE_ID = window.__ONBOARD.EMPLOYEE_ID;
+
+// ✅ Global listener for refresh event
+chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === "refreshTasks") {
+        console.log("[ONBOARD.AI] Refreshing task list...");
+        loadCurrentTask();
+    }
+});
 
 async function loadCurrentTask() {
     try {
         // Get current tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        
-        // Fetch task from CRM
+
         const response = await fetch(`${API_BASE}/api/employee/task`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -18,14 +23,10 @@ async function loadCurrentTask() {
                 current_url: tab.url
             })
         });
-        
+
         const data = await response.json();
-        
-        if (data.has_active_task) {
-            displayTask(data.task, data.employee);
-        } else {
-            displayNoTask();
-        }
+        if (data.has_active_task) displayTask(data.task, data.employee);
+        else displayNoTask();
     } catch (error) {
         console.error('Failed to load task:', error);
         displayError();
@@ -134,4 +135,11 @@ function displayError() {
 }
 
 // Load task when popup opens
-document.addEventListener('DOMContentLoaded', loadCurrentTask);
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCurrentTask();
+
+    // Optional: reload if active tab changes
+    chrome.tabs.onActivated.addListener(() => {
+        loadCurrentTask();
+    });
+});

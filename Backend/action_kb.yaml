@@ -1,5 +1,5 @@
-# ONBOARD.AI Action Knowledge Base
-# This document defines all platform actions that can be guided
+# ONBOARD.AI Action Knowledge Base - GITHUB ONLY (EXTENDED)
+# Comprehensive GitHub operations for demo
 
 platforms:
   github:
@@ -18,7 +18,7 @@ platforms:
               - "summary[aria-label*='Create']"
               - "[data-target='create-menu.button']"
               - "a[href='/new']"
-            message: "👋 Click the '+' menu and select 'New repository'"
+            message: "👋 Click the '+' menu in top right and select 'New repository'"
             tip: "💡 A repository is like a project folder that tracks all your code changes"
 
           - step: 2
@@ -26,127 +26,168 @@ platforms:
             action: "fill_form"
             selectors:
               - selector: "input[name='repository[name]']"
-                message: "First, give your new repository a name. Make it short and memorable!"
+                message: "First, give your new repository a name. Try 'my-first-project'!"
                 required: true
               - selector: "input[name='repository[description]']"
-                message: "Now, add a brief description. This helps others understand your project."
+                message: "Now, add a brief description like 'Learning GitHub basics'"
                 required: false
               - selector: "input[name='repository[auto_init]']"
                 message: "✅ Check 'Add a README file' - it's the first thing people see!"
                 required: true
-            tip: "💡 Pro tip: Always add a README - it's the first thing people see!"
+            tip: "💡 Pro tip: Always add a README - it's your project's welcome page!"
 
           - step: 3
             page_pattern: "*github.com/new"
             action: "submit"
             selectors:
               - "button[type='submit'].btn-primary"
-            message: "🚀 Click 'Create repository' when ready"
+              - "button[data-disable-with]"
+            message: "🚀 Click the green 'Create repository' button at the bottom"
 
           - step: 4
             page_pattern: "*github.com/*/blob/*"
             completion_indicators:
               - "repository-content"
               - "#code-tab"
-            message: "🎉 Repository created successfully!"
+            message: "🎉 Repository created successfully! You can now see your README file."
 
-      clone_repository:
-        id: "github_clone"
-        title: "Clone a Repository"
+      create_file:
+        id: "github_create_file"
+        title: "Create a New File in GitHub"
         steps:
           - step: 1
             page_pattern: "*github.com/*/*"
             action: "click"
             selectors:
-              - "button#code-button"
-              - "button[data-target*='get-repo']"
-            message: "Click the 'Code' button to get the clone URL"
+              - "a[href*='/new/']"
+              - "summary:has-text('Add file')"
+              - "[data-hotkey='c']"
+            message: "📄 Click 'Add file' dropdown, then select 'Create new file'"
+            tip: "💡 Files are where you write your actual code!"
 
           - step: 2
-            page_pattern: "*github.com/*/*"
-            action: "copy"
-            selectors:
-              - "input[aria-label*='Clone']"
-              - ".clipboard-copy-text"
-            message: "Copy the repository URL"
-            tip: "Next: Open your terminal and run 'git clone [paste-url]'"
-
-      create_pull_request:
-        id: "github_pr"
-        title: "Create a Pull Request"
-        prerequisites:
-          - "Must be on a repository page"
-          - "Must have a branch with changes"
-        steps:
-          - step: 1
-            page_pattern: "*github.com/*/*"
-            action: "navigate"
-            selectors:
-              - "a[href*='/pull/new']"
-              - "button[data-ga-click*='pull request']"
-            message: "Click 'Pull requests' tab, then 'New pull request'"
-
-          - step: 2
-            page_pattern: "*github.com/*/compare/*"
-            action: "select"
-            selectors:
-              - "button.branch-select"
-            message: "Select your branch to compare"
-
-          - step: 3
-            page_pattern: "*github.com/*/compare/*"
+            page_pattern: "*github.com/*/new/*"
             action: "fill_form"
             selectors:
-              - selector: "input#pull_request_title"
-                message: "Enter a clear title for your pull request"
+              - selector: "input[name='filename']"
+                message: "Name your file. Try 'hello.py' for a Python file!"
                 required: true
-              - selector: "textarea#pull_request_body"
-                message: "Describe what changes you made and why"
+              - selector: "textarea.CodeMirror"
+                message: "Write some code! Try: print('Hello, World!')"
                 required: true
-            tip: "A good PR description helps reviewers understand your changes"
+            tip: "💡 The file extension (.py, .js, .md) tells GitHub what language you're using"
+
+          - step: 3
+            page_pattern: "*github.com/*/new/*"
+            action: "scroll"
+            message: "📝 Scroll down to the 'Commit' section at the bottom"
 
           - step: 4
-            page_pattern: "*github.com/*/compare/*"
+            page_pattern: "*github.com/*/new/*"
+            action: "fill_form"
+            selectors:
+              - selector: "input#commit-summary-input"
+                message: "Write a commit message like 'Add hello.py file'"
+                required: true
+            tip: "💡 Commit messages explain what changes you made"
+
+          - step: 5
+            page_pattern: "*github.com/*/new/*"
             action: "submit"
             selectors:
-              - "button.btn-primary[type='submit']"
-            message: "Click 'Create pull request'"
+              - "button#commit-changes"
+              - "button[type='submit']"
+            message: "✅ Click 'Commit new file' to save your changes"
 
-      create_issue:
-        id: "github_issue"
-        title: "Create an Issue"
+          - step: 6
+            page_pattern: "*github.com/*/blob/*"
+            completion_indicators:
+              - "blob-code"
+              - "file-header"
+            message: "🎉 File created! You can now see it in your repository."
+
+      edit_readme:
+        id: "github_edit_readme"
+        title: "Edit Your README File"
         steps:
           - step: 1
             page_pattern: "*github.com/*/*"
-            action: "navigate"
-            selectors:
-              - "a[href*='/issues']"
-            message: "Click on the 'Issues' tab"
-
-          - step: 2
-            page_pattern: "*github.com/*/issues"
             action: "click"
             selectors:
-              - "a[href*='/issues/new']"
-            message: "Click 'New issue' button"
+              - "a[href*='README.md']"
+              - "[title='README.md']"
+            message: "📖 Click on 'README.md' to view it"
+
+          - step: 2
+            page_pattern: "*github.com/*/blob/*/README.md"
+            action: "click"
+            selectors:
+              - "button[aria-label*='Edit']"
+              - "a[aria-label*='Edit']"
+              - "button:has-text('Edit')"
+            message: "✏️ Click the pencil icon (Edit) in the top right of the file"
 
           - step: 3
-            page_pattern: "*github.com/*/issues/new"
+            page_pattern: "*github.com/*/edit/*"
             action: "fill_form"
             selectors:
-              - selector: "input#issue_title"
-                message: "Enter a descriptive issue title"
+              - selector: "textarea.CodeMirror"
+                message: "Add some text to your README! Try adding '## About' and a description"
                 required: true
-              - selector: "textarea#issue_body"
-                message: "Describe the issue in detail"
-                required: true
+            tip: "💡 README files use Markdown - # for headers, ** for bold, * for bullets"
 
           - step: 4
-            page_pattern: "*github.com/*/issues/new"
+            page_pattern: "*github.com/*/edit/*"
+            action: "scroll"
+            message: "📝 Scroll down to commit your changes"
+
+          - step: 5
+            page_pattern: "*github.com/*/edit/*"
+            action: "fill_form"
+            selectors:
+              - selector: "input#commit-summary-input"
+                message: "Write a commit message like 'Update README with project info'"
+                required: true
+
+          - step: 6
+            page_pattern: "*github.com/*/edit/*"
             action: "submit"
             selectors:
-              - "button.btn-primary[type='submit']"
-            message: "Click 'Submit new issue'"
+              - "button#commit-changes"
+            message: "✅ Click 'Commit changes' to save"
+
+          - step: 7
+            page_pattern: "*github.com/*/blob/*"
+            completion_indicators:
+              - "readme"
+            message: "🎉 README updated! Your changes are now visible to everyone."
+
+      create_branch:
+        id: "github_create_branch"
+        title: "Create a New Branch"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "click"
+            selectors:
+              - "button#branch-picker-button"
+              - "summary[title*='branch']"
+              - "[data-hotkey='b']"
+            message: "🌿 Click the branch dropdown (usually shows 'main')"
+            tip: "💡 Branches let you work on features without affecting the main code"
+
+          - step: 2
+            action: "fill_form"
+            selectors:
+              - selector: "input[aria-label*='branch']"
+                message: "Type a branch name like 'feature-update' and press Enter"
+                required: true
+            tip: "💡 Branch names should describe what you're working on"
+
+          - step: 3
+            completion_indicators:
+              - "branch-select-menu"
+            message: "🎉 New branch created! You're now working on your feature branch."
 
       fork_repository:
         id: "github_fork"
@@ -158,130 +199,391 @@ platforms:
             selectors:
               - "button[data-ga-click*='fork']"
               - "a[href*='/fork']"
-            message: "Click the 'Fork' button in the top right"
-            tip: "Forking creates your own copy of the repository"
+            message: "🍴 Click the 'Fork' button in the top right corner"
+            tip: "💡 Forking creates your own copy of someone else's repository"
 
           - step: 2
-            completion_indicators:
-              - "forked from"
-            message: "Repository forked successfully!"
-
-  slack:
-    name: "Slack"
-    base_url: "slack.com"
-
-    actions:
-      create_channel:
-        id: "slack_channel"
-        title: "Create a Slack Channel"
-        steps:
-          - step: 1
-            page_pattern: "*slack.com/*"
-            action: "click"
-            selectors:
-              - "button[data-qa='channel_browser']"
-              - "button[aria-label*='channel']"
-            message: "Click 'Channels' in the sidebar"
-
-          - step: 2
-            page_pattern: "*slack.com/*"
-            action: "click"
-            selectors:
-              - "button[data-qa='channel_browser_action_button']"
-            message: "Click 'Create channel'"
-
-          - step: 3
-            action: "fill_form"
-            selectors:
-              - selector: "input[data-qa='channel_name_input']"
-                message: "Enter channel name"
-                required: true
-              - selector: "textarea[data-qa='channel_description_input']"
-                message: "Add channel description"
-                required: false
-
-      send_message:
-        id: "slack_message"
-        title: "Send a Slack Message"
-        steps:
-          - step: 1
-            action: "navigate"
-            message: "Navigate to the channel or DM"
-
-          - step: 2
-            action: "fill_form"
-            selectors:
-              - selector: "[data-qa='message_input']"
-                message: "Type your message here"
-                required: true
-            tip: "Use @ to mention someone, # to link a channel"
-
-  jira:
-    name: "Jira"
-    base_url: "atlassian.net"
-
-    actions:
-      create_ticket:
-        id: "jira_ticket"
-        title: "Create a Jira Ticket"
-        steps:
-          - step: 1
-            page_pattern: "*atlassian.net/jira*"
-            action: "click"
-            selectors:
-              - "button[data-test-id='global-pages.directories.directory-base.content-area.create-button']"
-              - "button#createGlobalItem"
-            message: "Click the 'Create' button in the top navigation"
-
-          - step: 2
-            action: "fill_form"
-            selectors:
-              - selector: "input[name='summary']"
-                message: "Enter ticket summary"
-                required: true
-              - selector: "[data-test-id='issue.create.description']"
-                message: "Describe the issue"
-                required: true
-              - selector: "select[name='issuetype']"
-                message: "Select issue type (Bug, Task, Story, etc.)"
-                required: true
-            tip: "Be specific in your description - it helps the team understand the issue"
-
-          - step: 3
+            page_pattern: "*github.com/*/fork"
             action: "submit"
             selectors:
               - "button[type='submit']"
-            message: "Click 'Create' to submit"
+            message: "✅ Click 'Create fork' to complete"
 
-  figma:
-    name: "Figma"
-    base_url: "figma.com"
+          - step: 3
+            completion_indicators:
+              - "forked from"
+            message: "🎉 Repository forked! You now have your own copy to experiment with."
 
-    actions:
-      create_file:
-        id: "figma_file"
-        title: "Create a Figma File"
+      create_pull_request:
+        id: "github_create_pr"
+        title: "Create a Pull Request"
         steps:
           - step: 1
-            page_pattern: "*figma.com/*"
-            action: "click"
+            page_pattern: "*github.com/*/*"
+            action: "navigate"
             selectors:
-              - "button[data-testid='new-file-button']"
-            message: "Click 'New File' button"
+              - "a[href*='/pull/new']"
+              - "button[data-ga-click*='pull request']"
+            message: "🔀 Click 'Pull requests' tab, then 'New pull request'"
+            tip: "💡 Pull requests let you propose changes to a repository"
 
           - step: 2
+            page_pattern: "*github.com/*/compare/*"
+            action: "select"
+            selectors:
+              - "button.branch-select"
+            message: "📋 Select your branch to compare with the main branch"
+
+          - step: 3
+            page_pattern: "*github.com/*/compare/*"
+            action: "click"
+            selectors:
+              - "button[type='submit']"
+            message: "➡️ Click 'Create pull request' button"
+
+          - step: 4
+            page_pattern: "*github.com/*/compare/*"
+            action: "fill_form"
+            selectors:
+              - selector: "input#pull_request_title"
+                message: "Enter a clear title for your pull request"
+                required: true
+              - selector: "textarea#pull_request_body"
+                message: "Describe what changes you made and why"
+                required: true
+            tip: "💡 A good PR description helps reviewers understand your changes"
+
+          - step: 5
+            page_pattern: "*github.com/*/compare/*"
+            action: "submit"
+            selectors:
+              - "button.btn-primary[type='submit']"
+            message: "🚀 Click 'Create pull request' to submit"
+
+          - step: 6
+            completion_indicators:
+              - "pull-request"
+            message: "🎉 Pull request created! Now others can review your code."
+
+      create_issue:
+        id: "github_create_issue"
+        title: "Create an Issue"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
             action: "navigate"
-            message: "Your new design file is ready!"
-            tip: "Use F to create frames, T for text, R for rectangles"
+            selectors:
+              - "a[href*='/issues']"
+            message: "📋 Click on the 'Issues' tab"
+            tip: "💡 Issues are used to track bugs, features, and tasks"
+
+          - step: 2
+            page_pattern: "*github.com/*/issues"
+            action: "click"
+            selectors:
+              - "a[href*='/issues/new']"
+            message: "➕ Click 'New issue' button (green button on the right)"
+
+          - step: 3
+            page_pattern: "*github.com/*/issues/new"
+            action: "fill_form"
+            selectors:
+              - selector: "input#issue_title"
+                message: "Enter a descriptive issue title (e.g., 'Bug: Login button not working')"
+                required: true
+              - selector: "textarea#issue_body"
+                message: "Describe the issue in detail. Include steps to reproduce if it's a bug."
+                required: true
+
+          - step: 4
+            page_pattern: "*github.com/*/issues/new"
+            action: "submit"
+            selectors:
+              - "button.btn-primary[type='submit']"
+            message: "📤 Click 'Submit new issue'"
+
+          - step: 5
+            completion_indicators:
+              - "issue-content"
+            message: "🎉 Issue created! Your team can now track and discuss it."
+
+      clone_repository:
+        id: "github_clone"
+        title: "Clone a Repository"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "click"
+            selectors:
+              - "button#code-button"
+              - "button[data-target*='get-repo']"
+            message: "📥 Click the green 'Code' button"
+            tip: "💡 Cloning downloads a copy of the repository to your computer"
+
+          - step: 2
+            page_pattern: "*github.com/*/*"
+            action: "copy"
+            selectors:
+              - "input[aria-label*='Clone']"
+              - ".clipboard-copy-text"
+            message: "📋 Copy the repository URL (HTTPS is easiest for beginners)"
+
+          - step: 3
+            action: "navigate"
+            message: "💻 Open your terminal and run: git clone [paste-the-url]"
+            tip: "💡 Make sure you have Git installed on your computer first!"
+
+      add_collaborator:
+        id: "github_add_collaborator"
+        title: "Add a Collaborator"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "navigate"
+            selectors:
+              - "a[href*='/settings']"
+            message: "⚙️ Click 'Settings' tab in your repository"
+
+          - step: 2
+            page_pattern: "*github.com/*/settings"
+            action: "click"
+            selectors:
+              - "a[href*='/collaborators']"
+            message: "👥 Click 'Collaborators' in the left sidebar"
+
+          - step: 3
+            page_pattern: "*github.com/*/settings/access"
+            action: "click"
+            selectors:
+              - "button:has-text('Add people')"
+            message: "➕ Click 'Add people' button"
+
+          - step: 4
+            action: "fill_form"
+            selectors:
+              - selector: "input[type='text']"
+                message: "🔍 Search for the GitHub username or email"
+                required: true
+
+          - step: 5
+            action: "submit"
+            message: "✅ Select the user and click 'Add to repository'"
+
+          - step: 6
+            completion_indicators:
+              - "pending invitation"
+            message: "🎉 Invitation sent! They'll receive an email to accept."
+
+      create_release:
+        id: "github_create_release"
+        title: "Create a Release"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "navigate"
+            selectors:
+              - "a[href*='/releases']"
+            message: "🏷️ Click 'Releases' on the right sidebar"
+            tip: "💡 Releases mark specific versions of your software"
+
+          - step: 2
+            page_pattern: "*github.com/*/releases"
+            action: "click"
+            selectors:
+              - "a[href*='/releases/new']"
+            message: "📦 Click 'Create a new release' or 'Draft a new release'"
+
+          - step: 3
+            page_pattern: "*github.com/*/releases/new"
+            action: "fill_form"
+            selectors:
+              - selector: "input[name='tag_version']"
+                message: "Enter a version tag (e.g., v1.0.0)"
+                required: true
+              - selector: "input[name='release_title']"
+                message: "Give your release a title (e.g., 'Version 1.0 - Initial Release')"
+                required: true
+              - selector: "textarea[name='release_body']"
+                message: "Describe what's new in this release"
+                required: true
+
+          - step: 4
+            action: "submit"
+            selectors:
+              - "button[type='submit']"
+            message: "🚀 Click 'Publish release'"
+
+          - step: 5
+            completion_indicators:
+              - "release-header"
+            message: "🎉 Release published! Users can now download this version."
+
+      add_license:
+        id: "github_add_license"
+        title: "Add a License to Your Repository"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "click"
+            selectors:
+              - "a[href*='/new']"
+              - "summary:has-text('Add file')"
+            message: "📄 Click 'Add file' > 'Create new file'"
+
+          - step: 2
+            page_pattern: "*github.com/*/new/*"
+            action: "fill_form"
+            selectors:
+              - selector: "input[name='filename']"
+                message: "Type 'LICENSE' as the filename"
+                required: true
+            tip: "💡 GitHub will automatically detect and offer license templates"
+
+          - step: 3
+            action: "click"
+            selectors:
+              - "button:has-text('Choose a license template')"
+            message: "📋 Click 'Choose a license template' button that appears"
+
+          - step: 4
+            action: "select"
+            message: "📜 Choose a license (MIT is popular for open source projects)"
+
+          - step: 5
+            action: "submit"
+            selectors:
+              - "button:has-text('Review and submit')"
+            message: "✅ Click 'Review and submit', then 'Commit changes'"
+
+          - step: 6
+            completion_indicators:
+              - "LICENSE"
+            message: "🎉 License added! Your project now has clear legal terms."
+
+      enable_github_pages:
+        id: "github_enable_pages"
+        title: "Enable GitHub Pages"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "navigate"
+            selectors:
+              - "a[href*='/settings']"
+            message: "⚙️ Go to repository Settings"
+
+          - step: 2
+            page_pattern: "*github.com/*/settings"
+            action: "click"
+            selectors:
+              - "a[href*='/pages']"
+            message: "📄 Click 'Pages' in the left sidebar"
+
+          - step: 3
+            page_pattern: "*github.com/*/settings/pages"
+            action: "select"
+            selectors:
+              - "select[name='source_branch']"
+            message: "🌿 Select 'main' branch as source"
+
+          - step: 4
+            action: "submit"
+            selectors:
+              - "button[type='submit']"
+            message: "💾 Click 'Save'"
+
+          - step: 5
+            completion_indicators:
+              - "Your site is published"
+            message: "🎉 GitHub Pages enabled! Your site will be live in a few minutes."
+
+      add_gitignore:
+        id: "github_add_gitignore"
+        title: "Add .gitignore File"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "click"
+            selectors:
+              - "a[href*='/new']"
+            message: "📄 Click 'Add file' > 'Create new file'"
+
+          - step: 2
+            page_pattern: "*github.com/*/new/*"
+            action: "fill_form"
+            selectors:
+              - selector: "input[name='filename']"
+                message: "Type '.gitignore' as the filename"
+                required: true
+            tip: "💡 .gitignore tells Git which files to ignore (like secrets, logs, etc.)"
+
+          - step: 3
+            action: "click"
+            selectors:
+              - "button:has-text('Choose a .gitignore template')"
+            message: "📋 Click 'Choose a .gitignore template'"
+
+          - step: 4
+            action: "select"
+            message: "🔍 Choose a template for your language (e.g., Python, Node, Java)"
+
+          - step: 5
+            action: "submit"
+            message: "✅ Click 'Commit new file'"
+
+          - step: 6
+            completion_indicators:
+              - ".gitignore"
+            message: "🎉 .gitignore added! Sensitive files won't be committed."
+
+      star_repository:
+        id: "github_star_repo"
+        title: "Star a Repository"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "click"
+            selectors:
+              - "button[data-ga-click*='star']"
+              - "button:has-text('Star')"
+            message: "⭐ Click the 'Star' button in the top right"
+            tip: "💡 Starring shows appreciation and bookmarks repos you like"
+
+          - step: 2
+            completion_indicators:
+              - "Unstar"
+            message: "🎉 Repository starred! You can find it in your starred repositories."
+
+      watch_repository:
+        id: "github_watch_repo"
+        title: "Watch a Repository"
+        steps:
+          - step: 1
+            page_pattern: "*github.com/*/*"
+            action: "click"
+            selectors:
+              - "button[data-ga-click*='watch']"
+              - "button:has-text('Watch')"
+            message: "👁️ Click the 'Watch' button in the top right"
+            tip: "💡 Watching sends you notifications about repository activity"
+
+          - step: 2
+            action: "select"
+            message: "📬 Choose notification level (All activity, Issues/PRs, Custom)"
+
+          - step: 3
+            completion_indicators:
+              - "Unwatch"
+            message: "🎉 Now watching! You'll receive updates about this repository."
 
 # AI Instructions for generating guidance
 ai_guidance_rules:
   - "Always check current URL against page_pattern to match the correct step"
   - "Use completion_indicators to detect when a step or task is done"
-  - "Generate contextual tips based on the platform and action"
+  - "Generate contextual tips based on the action"
   - "If multiple selectors exist, try each one and highlight whichever is found"
   - "Adapt language to be friendly, encouraging, and clear"
   - "For required fields, emphasize importance"
   - "Always provide 'why' context when helpful (tips)"
-  - "If user is stuck on one step too long, offer alternative approaches"
+  - "If user is stuck, offer alternative approaches"
   - "Celebrate milestones and completions enthusiastically"
+  - "Break complex actions into smaller, digestible steps"

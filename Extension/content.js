@@ -1,4 +1,4 @@
-// content.js - FIXED VERSION with proper URL change handling
+// content.js - DEMO VERSION (No step counter, cleaner UI)
 
 // Prevent duplicate injection
 if (window.__ONBOARD_LOADED) {
@@ -31,7 +31,7 @@ class OnboardOverlay {
         if (hasTask) {
             this.injectStyles();
             this.setupIdleDetection();
-            setTimeout(() => this.showHelpPrompt(), 5000);
+            setTimeout(() => this.showHelpPrompt(), 3000);
         }
     }
 
@@ -130,7 +130,6 @@ class OnboardOverlay {
         style.textContent = `
             .onboard-overlay {
                 position: fixed;
-                z-index: 999999;
                 pointer-events: none;
             }
             
@@ -140,8 +139,7 @@ class OnboardOverlay {
                 border-radius: 8px;
                 box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.2), 0 0 20px rgba(139, 92, 246, 0.4);
                 animation: onboard-pulse 2s infinite;
-                pointer-events: none;
-                z-index: 999998;
+                pointer-events: none !important;
             }
             
             @keyframes onboard-pulse {
@@ -160,9 +158,9 @@ class OnboardOverlay {
                 line-height: 1.5;
                 max-width: 320px;
                 box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-                pointer-events: auto;
-                z-index: 999999;
                 animation: onboard-fadein 0.3s ease-out;
+                pointer-events: none !important;
+                user-select: none;
             }
             
             @keyframes onboard-fadein {
@@ -285,56 +283,62 @@ class OnboardOverlay {
                 transition: width 0.3s ease;
             }
             
-            .onboard-task-banner {
-                position: fixed;
-                top: 16px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: white;
-                padding: 12px 24px;
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                z-index: 999999;
-                pointer-events: auto;
-            }
-            
-            .onboard-task-icon {
-                width: 32px;
-                height: 32px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: white;
-                font-weight: bold;
-            }
-            
-            .onboard-task-text {
-                font-size: 14px;
-                color: #1f2937;
-            }
-            
-            .onboard-close-btn {
-                background: none;
-                border: none;
-                color: #9ca3af;
-                cursor: pointer;
-                font-size: 20px;
-                padding: 0;
-                width: 24px;
-                height: 24px;
-            }
-            
             .onboard-text-guidance {
                 position: fixed;
                 bottom: 80px;
                 right: 24px;
                 z-index: 999999;
                 animation: onboard-slidein 0.3s ease-out;
+            }
+            
+            .onboard-mini-indicator {
+                position: fixed;
+                bottom: 24px;
+                left: 24px;
+                background: white;
+                padding: 12px 16px;
+                border-radius: 12px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                z-index: 999999;
+                pointer-events: auto;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            }
+            
+            .onboard-mini-icon {
+                width: 28px;
+                height: 28px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 14px;
+            }
+            
+            .onboard-mini-text {
+                font-size: 13px;
+                color: #1f2937;
+                font-weight: 500;
+            }
+            
+            .onboard-mini-close {
+                background: none;
+                border: none;
+                color: #9ca3af;
+                cursor: pointer;
+                font-size: 16px;
+                padding: 0;
+                width: 20px;
+                height: 20px;
+                margin-left: 8px;
+            }
+            
+            .onboard-mini-close:hover {
+                color: #6b7280;
             }
         `;
         document.head.appendChild(style);
@@ -400,7 +404,7 @@ class OnboardOverlay {
     async startGuidance() {
         this.overlayVisible = true;
         
-        this.showTaskBanner();
+        this.showMiniIndicator();
         this.showProgressBar();
         await this.updateGuidance();
         this.startUrlMonitoring();
@@ -422,38 +426,38 @@ class OnboardOverlay {
     }
 
     async onUrlChange() {
+        console.log("[ONBOARD.AI] URL changed, updating guidance...");
         this.clearOverlays();
         document.getElementById('onboard-text-guidance')?.remove();
         await new Promise(resolve => setTimeout(resolve, 800));
-        await this.updateGuidance();
+
+        // Recheck for active task each time page changes
+        const stillHasTask = await this.checkForTask();
+        if (stillHasTask) {
+            await this.updateGuidance();
+        } else {
+            console.warn("[ONBOARD.AI] No active task found on this page");
+        }
     }
 
-    showTaskBanner() {
-        const banner = document.createElement('div');
-        banner.className = 'onboard-task-banner';
-        banner.id = 'onboard-task-banner';
+
+    showMiniIndicator() {
+        document.getElementById('onboard-mini-indicator')?.remove();
         
-        const currentStep = Math.min(this.currentTask.steps_completed + 1, this.currentTask.total_steps);
+        const indicator = document.createElement('div');
+        indicator.className = 'onboard-mini-indicator';
+        indicator.id = 'onboard-mini-indicator';
         
-        banner.innerHTML = `
-            <div class="onboard-task-icon">${currentStep}</div>
-            <div class="onboard-task-text">
-                <strong>${this.currentTask.title}</strong> - Step ${currentStep} of ${this.currentTask.total_steps}
-            </div>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <button class="onboard-close-btn" title="Refresh" id="onboard-refresh">🔄</button>
-              <button class="onboard-close-btn" title="Close" id="onboard-close">×</button>
-            </div>
+        indicator.innerHTML = `
+            <div class="onboard-mini-icon">✨</div>
+            <div class="onboard-mini-text">${this.currentTask.title}</div>
+            <button class="onboard-mini-close" title="Close" id="onboard-mini-close">×</button>
         `;
         
-        document.body.appendChild(banner);
+        document.body.appendChild(indicator);
         
-        document.getElementById('onboard-close').addEventListener('click', () => {
+        document.getElementById('onboard-mini-close').addEventListener('click', () => {
             this.stopGuidance();
-        });
-
-        document.getElementById('onboard-refresh').addEventListener('click', async () => {
-            await this.updateGuidance();
         });
     }
 
@@ -484,6 +488,12 @@ class OnboardOverlay {
                 task_id: this.currentTask.id,
                 current_step: this.currentTask.steps_completed
             };
+            if (window.location.href.match(/github\.com\/[^/]+\/[^/]+/)) {
+                context.page_context = "repository";
+            } else if (window.location.href.includes("/new")) {
+                context.page_context = "repo_creation";
+            }
+            console.log("[ONBOARD.AI] Current page context:", context.page_context);
             
             console.log('[ONBOARD.AI] Fetching guidance for step:', this.currentTask.steps_completed);
             
@@ -514,24 +524,12 @@ class OnboardOverlay {
                 return;
             }
             
-            this.updateBanner();
             this.updateProgressBar();
             
         } catch (error) {
             if (error.message !== 'Extension needs reload') {
                 console.error('[ONBOARD.AI] Failed to fetch guidance:', error);
             }
-        }
-    }
-
-    updateBanner() {
-        const banner = document.getElementById('onboard-task-banner');
-        if (banner) {
-            const currentStep = Math.min(this.currentTask.steps_completed + 1, this.currentTask.total_steps);
-            banner.querySelector('.onboard-task-icon').textContent = String(currentStep);
-            banner.querySelector('.onboard-task-text').innerHTML = `
-                <strong>${this.currentTask.title}</strong> - Step ${currentStep} of ${this.currentTask.total_steps}
-            `;
         }
     }
 
@@ -687,7 +685,7 @@ class OnboardOverlay {
             <div class="onboard-help-message">
                 I don't have specific guidance for this page yet, but you're on the right track!
                 <br><br>
-                <strong>Current step:</strong> ${this.currentTask.title} - Step ${this.currentTask.steps_completed + 1}
+                <strong>Current task:</strong> ${this.currentTask.title}
             </div>
             <div class="onboard-help-buttons">
                 <button class="onboard-btn onboard-btn-primary" id="generic-ok">Continue</button>
@@ -701,6 +699,21 @@ class OnboardOverlay {
     createOverlayForElement(element, action) {
         const rect = element.getBoundingClientRect();
         
+        // Check if element is likely inside a dropdown/modal (high z-index parent)
+        let parent = element.parentElement;
+        let hasHighZIndex = false;
+        while (parent && parent !== document.body) {
+            const zIndex = window.getComputedStyle(parent).zIndex;
+            if (zIndex && parseInt(zIndex) > 100000) {
+                hasHighZIndex = true;
+                break;
+            }
+            parent = parent.parentElement;
+        }
+        
+        // Use a z-index just below GitHub's dropdowns if needed
+        const baseZIndex = hasHighZIndex ? 99999 : 999998;
+        
         if (action.action_type === 'highlight' || action.action_type === 'click') {
             const highlight = document.createElement('div');
             highlight.className = 'onboard-highlight onboard-overlay';
@@ -708,6 +721,7 @@ class OnboardOverlay {
             highlight.style.top = `${rect.top + window.scrollY - 4}px`;
             highlight.style.width = `${rect.width + 8}px`;
             highlight.style.height = `${rect.height + 8}px`;
+            highlight.style.zIndex = baseZIndex;
             document.body.appendChild(highlight);
         }
         
@@ -724,8 +738,16 @@ class OnboardOverlay {
         let left = rect.left + window.scrollX + (rect.width / 2) - (tooltipRect.width / 2);
         let top = rect.bottom + window.scrollY + 12;
         
+        // Position tooltip below the element by default
+        // If it would go off-screen, position above
+        if (top + tooltipRect.height > window.innerHeight + window.scrollY) {
+            top = rect.top + window.scrollY - tooltipRect.height - 12;
+            tooltip.querySelector('.onboard-tooltip-arrow')?.classList.replace('bottom', 'top');
+        }
+        
         tooltip.style.left = `${Math.max(10, left)}px`;
         tooltip.style.top = `${Math.max(10, top)}px`;
+        tooltip.style.zIndex = baseZIndex + 1;
     }
 
     clearOverlays() {
@@ -790,7 +812,7 @@ class OnboardOverlay {
         }
         
         this.clearOverlays();
-        document.getElementById('onboard-task-banner')?.remove();
+        document.getElementById('onboard-mini-indicator')?.remove();
         document.getElementById('onboard-progress-bar')?.remove();
         document.getElementById('onboard-text-guidance')?.remove();
     }
@@ -830,14 +852,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.error('[ONBOARD.AI] Overlay not initialized');
             sendResponse({ success: false, error: 'Overlay not initialized' });
         }
-        return true; // Keep channel open for async response
+        return true;
     }
     
     if (request.action === 'check_task') {
         sendResponse({ present: !!window.__onboardOverlay });
     }
     
-    return true; // Keep message channel open
+    return true;
 });
 
 } // End of if (!window.__ONBOARD_LOADED)

@@ -39,22 +39,29 @@ async function checkIfTaskRelevant(tabId, url) {
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Proxy fetch requests from content scripts (avoids mixed-content blocks)
-    if (request.action === 'proxy_fetch') {
+        if (request.action === 'proxy_fetch') {
         const { url, fetchOptions } = request;
+
         fetch(url, fetchOptions)
             .then(async res => {
                 const contentType = res.headers.get('content-type') || '';
-                let body = null;
-                if (contentType.includes('application/json')) {
-                    body = await res.json();
-                } else {
-                    body = await res.text();
-                }
+                let body = contentType.includes('application/json')
+                    ? await res.json()
+                    : await res.text();
+
                 sendResponse({ ok: res.ok, status: res.status, body });
+
+                // ✅ Refresh popup only if a task was created or progress updated
+                if (url.includes('/api/task/create') || url.includes('/api/task/progress')) {
+                    console.log('[ONBOARD.AI] Task state changed — triggering popup refresh');
+                    chrome.runtime.sendMessage({ action: 'refreshTasks' });
+                }
             })
             .catch(err => sendResponse({ ok: false, error: String(err) }));
-        return true; // will respond asynchronously
+
+        return true; // Keep channel open for async response
     }
+
     if (request.action === 'task_completed') {
         // Show notification
         chrome.notifications.create({

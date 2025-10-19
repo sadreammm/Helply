@@ -418,6 +418,16 @@ async def get_ai_status():
         "kb_loaded": kb_engine is not None
     }
 
+@app.get("/api/employees/{employee_id}/tasks")
+async def get_all_employee_tasks(employee_id: str):
+    """Fetch all tasks for an employee"""
+    employee = await crm.get_employee(employee_id)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    all_tasks = await crm.get_tasks(employee_id)
+    return all_tasks
+
 @app.post("/api/employee/task")
 async def get_employee_task(request: Dict):
     """Fetch active tasks"""
