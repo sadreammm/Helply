@@ -1,6 +1,5 @@
-// popup.js - Unified Task & Chat Interface
+// Chatbot.js - FIXED VERSION
 
-// Use shared global config if available
 window.__ONBOARD = window.__ONBOARD || { API_BASE: 'http://localhost:8000', EMPLOYEE_ID: 'emp_001' };
 const API_BASE = window.__ONBOARD.API_BASE;
 const EMPLOYEE_ID = window.__ONBOARD.EMPLOYEE_ID;
@@ -18,35 +17,27 @@ class OnboardPopup {
         this.chatModeBtn = document.getElementById('chatModeBtn');
         this.headerSubtitle = document.getElementById('headerSubtitle');
         
-        // Chat elements
         this.chatMessages = document.getElementById('chatMessages');
         this.chatInput = document.getElementById('chatInput');
         this.sendBtn = document.getElementById('sendBtn');
         
-        // Task elements
         this.taskContent = document.getElementById('taskContent');
         
         this.init();
     }
     
     async init() {
-        // Load current tab context
         await this.loadContext();
-        
-        // Load task view by default
         await this.loadTask();
         
-        // Setup mode toggle
         this.taskModeBtn.addEventListener('click', () => this.switchView('task'));
         this.chatModeBtn.addEventListener('click', () => this.switchView('chat'));
         
-        // Setup chat
         this.sendBtn.addEventListener('click', () => this.handleSend());
         this.chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.handleSend();
         });
         
-        // Quick actions
         document.querySelectorAll('.quick-action').forEach(btn => {
             btn.addEventListener('click', () => {
                 this.switchView('chat');
@@ -74,7 +65,6 @@ class OnboardPopup {
     switchView(view) {
         this.currentView = view;
         
-        // Update buttons
         if (view === 'task') {
             this.taskModeBtn.classList.add('active');
             this.chatModeBtn.classList.remove('active');
@@ -87,13 +77,9 @@ class OnboardPopup {
             this.chatView.classList.add('active');
             this.taskView.classList.remove('active');
             this.headerSubtitle.textContent = 'Chat Assistant';
-            
-            // Focus input when switching to chat
             setTimeout(() => this.chatInput.focus(), 100);
         }
     }
-    
-    // ========== TASK VIEW ==========
     
     async loadTask() {
         try {
@@ -145,9 +131,7 @@ class OnboardPopup {
                     <button class="btn btn-primary" id="startGuidanceBtn">
                         ${task.steps_completed > 0 ? '▶ Continue Guidance' : '🚀 Start Guidance'}
                     </button>
-                    <button class="btn btn-secondary" id="refreshBtn">
-                        🔄
-                    </button>
+                    <button class="btn btn-secondary" id="refreshBtn">🔄</button>
                 </div>
             </div>
             
@@ -171,7 +155,6 @@ class OnboardPopup {
         
         this.taskContent.innerHTML = html;
         
-        // Event listeners
         document.getElementById('startGuidanceBtn').addEventListener('click', () => {
             this.startGuidance(task);
         });
@@ -240,44 +223,48 @@ class OnboardPopup {
     
     async startGuidance(task) {
         try {
-            // Inject content script if needed
+            // FIXED: Ensure content script is injected
             await chrome.scripting.executeScript({
                 target: { tabId: this.currentContext.tabId },
                 files: ['content.js']
             }).catch(() => {
-                // Script already injected
+                console.log('Content script already injected');
             });
+            
+            // FIXED: Wait a bit for script to initialize
+            await new Promise(resolve => setTimeout(resolve, 300));
             
             // Send message to start guidance
             chrome.tabs.sendMessage(this.currentContext.tabId, { 
                 action: 'start_guidance',
                 task_id: task.id
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('Failed to send message:', chrome.runtime.lastError);
+                    alert('Please refresh the page and try again.');
+                } else {
+                    // Close popup only if message was sent successfully
+                    window.close();
+                }
             });
             
-            // Close popup
-            window.close();
         } catch (error) {
             console.error('Failed to start guidance:', error);
             alert('Please refresh the page and try again.');
         }
     }
     
-    // ========== CHAT VIEW ==========
-    
     async handleSend() {
         const message = this.chatInput.value.trim();
         if (!message) return;
         
-        // Add user message
         this.addMessage(message, 'user');
         this.chatInput.value = '';
         this.sendBtn.disabled = true;
         
-        // Show typing indicator
         this.showTyping();
         
         try {
-            // Parse task from message
             const response = await fetch(`${API_BASE}/api/chat/parse-task`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -292,10 +279,8 @@ class OnboardPopup {
             this.hideTyping();
             
             if (data.understood) {
-                // Show matched task
                 this.showTaskMatch(data.task, data.matches);
             } else {
-                // Show clarification or suggestions
                 this.addMessage(data.message, 'ai');
                 if (data.suggestions) {
                     this.showSuggestions(data.suggestions);
@@ -366,12 +351,10 @@ class OnboardPopup {
         this.chatMessages.appendChild(messageDiv);
         this.scrollToBottom();
         
-        // Add event listener to start button
         document.getElementById('start-task-btn').addEventListener('click', () => {
             this.startTaskFromChat(task);
         });
         
-        // Show alternatives if available
         if (alternatives && alternatives.length > 1) {
             const altDiv = document.createElement('div');
             altDiv.className = 'message message-ai';
@@ -403,7 +386,6 @@ class OnboardPopup {
     }
     
     async startTaskFromChat(task) {
-        // Create task in CRM
         try {
             this.addMessage('Creating your task...', 'ai');
             
@@ -417,47 +399,81 @@ class OnboardPopup {
             });
             
             if (!response.ok) {
-                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                throw new Error(`Server returned ${response.status}`);
             }
             
             const data = await response.json();
             
             if (data.success) {
-                this.addMessage('✅ Task created! Starting guidance...', 'ai');
+                this.addMessage('✅ Task created! Injecting guidance system...', 'ai');
                 
-                // Inject content script if needed
+                // FIXED: Proper script injection and message sending
                 try {
+                    // Inject content script
                     await chrome.scripting.executeScript({
                         target: { tabId: this.currentContext.tabId },
                         files: ['content.js']
+                    }).catch(() => {
+                        console.log('Content script already present');
                     });
-                } catch (e) {
-                    // Script already injected
+                    
+                    // Wait for initialization
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // Send start guidance message with retry
+                    let retries = 3;
+                    let success = false;
+                    
+                    while (retries > 0 && !success) {
+                        try {
+                            await new Promise((resolve, reject) => {
+                                chrome.tabs.sendMessage(
+                                    this.currentContext.tabId, 
+                                    { 
+                                        action: 'start_guidance',
+                                        task_id: data.task_id
+                                    },
+                                    (response) => {
+                                        if (chrome.runtime.lastError) {
+                                            reject(chrome.runtime.lastError);
+                                        } else {
+                                            resolve(response);
+                                        }
+                                    }
+                                );
+                            });
+                            success = true;
+                        } catch (err) {
+                            retries--;
+                            if (retries > 0) {
+                                await new Promise(resolve => setTimeout(resolve, 300));
+                            }
+                        }
+                    }
+                    
+                    if (success) {
+                        this.addMessage('🎉 Guidance is now active! Check the page.', 'ai');
+                        
+                        // Update task view
+                        setTimeout(() => {
+                            this.loadTask();
+                        }, 1000);
+                        
+                        // Close popup
+                        setTimeout(() => {
+                            window.close();
+                        }, 2000);
+                    } else {
+                        throw new Error('Failed to activate guidance after retries');
+                    }
+                    
+                } catch (scriptError) {
+                    console.error('Script injection error:', scriptError);
+                    this.addMessage('⚠️ Please refresh the page and click the extension icon to start guidance.', 'ai');
                 }
-                
-                // Send message to start guidance
-                setTimeout(() => {
-                    chrome.tabs.sendMessage(this.currentContext.tabId, { 
-                        action: 'start_guidance',
-                        task_id: data.task_id
-                    });
-                }, 500);
-                
-                // Show success message
-                setTimeout(() => {
-                    this.addMessage('Look at the page - guidance is now active! 👀', 'ai');
-                    
-                    // Update task view
-                    this.loadTask();
-                    
-                    // Auto-close popup after brief delay
-                    setTimeout(() => {
-                        window.close();
-                    }, 2000);
-                }, 1000);
             }
         } catch (error) {
-            this.addMessage('Failed to create task. Please make sure the backend is running and try again.', 'ai');
+            this.addMessage('Failed to create task. Please make sure the backend is running.', 'ai');
             console.error('Task creation error:', error);
         }
     }
@@ -477,8 +493,6 @@ class OnboardPopup {
         return `<span class="confidence-badge ${badgeClass}">${label}</span>`;
     }
     
-    // ========== UTILITIES ==========
-    
     capitalize(str) {
         return str.charAt(0).toUpperCase() + str.slice(1);
     }
@@ -488,7 +502,6 @@ class OnboardPopup {
     }
 }
 
-// Initialize popup
 document.addEventListener('DOMContentLoaded', () => {
     new OnboardPopup();
 });

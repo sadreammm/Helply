@@ -1,4 +1,4 @@
-// content.js - Enhanced with smart selector finding
+// content.js - FIXED VERSION with proper URL change handling
 
 // Prevent duplicate injection
 if (window.__ONBOARD_LOADED) {
@@ -6,7 +6,6 @@ if (window.__ONBOARD_LOADED) {
 } else {
     window.__ONBOARD_LOADED = true;
 
-    // Use a single global namespace so values persist across reloads/injections
     window.__ONBOARD = window.__ONBOARD || {
         API_BASE: 'http://localhost:8000',
         EMPLOYEE_ID: 'emp_001'
@@ -22,6 +21,7 @@ class OnboardOverlay {
         this.suppressUntil = 0;
         this.lastUrl = location.href;
         this.submitBound = false;
+        this.urlCheckInterval = null;
         this.init();
     }
 
@@ -36,7 +36,6 @@ class OnboardOverlay {
     }
 
     async safeProxyFetch(url, options) {
-        // Wrapper that handles extension context invalidation
         try {
             const proxy = await new Promise((resolve, reject) => {
                 chrome.runtime.sendMessage({
@@ -58,7 +57,6 @@ class OnboardOverlay {
             
             return proxy.body;
         } catch (error) {
-            // Check if extension context was invalidated
             if (error.message.includes('Extension context invalidated') || 
                 error.message.includes('message port closed')) {
                 this.showExtensionReloadPrompt();
@@ -69,7 +67,6 @@ class OnboardOverlay {
     }
 
     showExtensionReloadPrompt() {
-        // Remove any existing prompt
         document.getElementById('onboard-reload-prompt')?.remove();
         
         const prompt = document.createElement('div');
@@ -186,14 +183,6 @@ class OnboardOverlay {
                 transform: translateX(-50%);
                 border-width: 0 8px 8px 8px;
                 border-color: transparent transparent #667eea transparent;
-            }
-            
-            .onboard-tooltip-arrow.top {
-                bottom: -8px;
-                left: 50%;
-                transform: translateX(-50%);
-                border-width: 8px 8px 0 8px;
-                border-color: #764ba2 transparent transparent transparent;
             }
             
             .onboard-help-prompt {
@@ -339,6 +328,14 @@ class OnboardOverlay {
                 width: 24px;
                 height: 24px;
             }
+            
+            .onboard-text-guidance {
+                position: fixed;
+                bottom: 80px;
+                right: 24px;
+                z-index: 999999;
+                animation: onboard-slidein 0.3s ease-out;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -406,8 +403,29 @@ class OnboardOverlay {
         this.showTaskBanner();
         this.showProgressBar();
         await this.updateGuidance();
-        this.observePageChanges();
-        this.attachCreateRepoSubmitListener();
+        this.startUrlMonitoring();
+    }
+
+    startUrlMonitoring() {
+        if (this.urlCheckInterval) {
+            clearInterval(this.urlCheckInterval);
+        }
+        
+        this.urlCheckInterval = setInterval(() => {
+            const currentUrl = location.href;
+            if (currentUrl !== this.lastUrl) {
+                console.log('[ONBOARD.AI] URL changed:', this.lastUrl, '->', currentUrl);
+                this.lastUrl = currentUrl;
+                this.onUrlChange();
+            }
+        }, 500);
+    }
+
+    async onUrlChange() {
+        this.clearOverlays();
+        document.getElementById('onboard-text-guidance')?.remove();
+        await new Promise(resolve => setTimeout(resolve, 800));
+        await this.updateGuidance();
     }
 
     showTaskBanner() {
@@ -452,7 +470,10 @@ class OnboardOverlay {
 
     async updateGuidance() {
         try {
-            if (Date.now() < this.suppressUntil) return;
+            if (Date.now() < this.suppressUntil) {
+                console.log('[ONBOARD.AI] Guidance suppressed');
+                return;
+            }
             
             const context = {
                 url: window.location.href,
@@ -460,8 +481,11 @@ class OnboardOverlay {
                 visible_text: document.body.innerText.substring(0, 1000),
                 dom_elements: this.getKeyDOMElements(),
                 employee_id: window.__ONBOARD.EMPLOYEE_ID,
-                task_id: this.currentTask.id
+                task_id: this.currentTask.id,
+                current_step: this.currentTask.steps_completed
             };
+            
+            console.log('[ONBOARD.AI] Fetching guidance for step:', this.currentTask.steps_completed);
             
             this.currentGuidance = await this.safeProxyFetch(
                 `${window.__ONBOARD.API_BASE}/api/guidance`,
@@ -472,12 +496,12 @@ class OnboardOverlay {
                 }
             );
             
-            // Log for debugging
             console.log('[ONBOARD.AI] Guidance received:', this.currentGuidance);
             
             if (this.currentGuidance?.step_number) {
                 const newStep = this.currentGuidance.step_number - 1;
                 if (Number.isFinite(newStep) && newStep !== this.currentTask.steps_completed) {
+                    console.log(`[ONBOARD.AI] Auto-advancing from step ${this.currentTask.steps_completed} to ${newStep}`);
                     this.currentTask.steps_completed = newStep;
                 }
             }
@@ -487,27 +511,35 @@ class OnboardOverlay {
             
             if (this.currentGuidance.task_complete) {
                 this.showCompletionMessage();
+                return;
             }
             
-            const banner = document.getElementById('onboard-task-banner');
-            if (banner) {
-                const currentStep = Math.min(this.currentTask.steps_completed + 1, this.currentTask.total_steps);
-                banner.querySelector('.onboard-task-icon').textContent = String(currentStep);
-                banner.querySelector('.onboard-task-text').innerHTML = `
-                    <strong>${this.currentTask.title}</strong> - Step ${currentStep} of ${this.currentTask.total_steps}
-                `;
-            }
-            
-            const barFill = document.querySelector('.onboard-progress-fill');
-            if (barFill) {
-                const progress = Math.min((this.currentTask.steps_completed / this.currentTask.total_steps) * 100, 100);
-                barFill.style.width = `${progress}%`;
-            }
+            this.updateBanner();
+            this.updateProgressBar();
             
         } catch (error) {
             if (error.message !== 'Extension needs reload') {
                 console.error('[ONBOARD.AI] Failed to fetch guidance:', error);
             }
+        }
+    }
+
+    updateBanner() {
+        const banner = document.getElementById('onboard-task-banner');
+        if (banner) {
+            const currentStep = Math.min(this.currentTask.steps_completed + 1, this.currentTask.total_steps);
+            banner.querySelector('.onboard-task-icon').textContent = String(currentStep);
+            banner.querySelector('.onboard-task-text').innerHTML = `
+                <strong>${this.currentTask.title}</strong> - Step ${currentStep} of ${this.currentTask.total_steps}
+            `;
+        }
+    }
+
+    updateProgressBar() {
+        const barFill = document.querySelector('.onboard-progress-fill');
+        if (barFill) {
+            const progress = Math.min((this.currentTask.steps_completed / this.currentTask.total_steps) * 100, 100);
+            barFill.style.width = `${progress}%`;
         }
     }
 
@@ -525,179 +557,87 @@ class OnboardOverlay {
         return elements.slice(0, 50);
     }
 
-    /**
-     * Smart selector finding with multiple fallback strategies
-     */
     findElement(action) {
         let selector = action.target_selector;
-        
-        // Handle Playwright-style pseudo-selectors that aren't valid CSS
-        // Convert :has-text('text') to a text search
-        // Convert :contains('text') to a text search
         let textSearchPattern = null;
         
         if (selector.includes(':has-text(') || selector.includes(':contains(')) {
             const match = selector.match(/:(?:has-text|contains)\(['"]([^'"]+)['"]\)/);
             if (match) {
                 textSearchPattern = match[1];
-                // Extract the base selector (before the pseudo-selector)
                 selector = selector.split(':')[0] || '*';
-                console.log(`[ONBOARD.AI] Converted pseudo-selector to text search: "${textSearchPattern}" in ${selector}`);
             }
         }
         
-        // Strategy 1: Try the primary selector (if it's valid CSS)
         try {
             let element = document.querySelector(selector);
-            
-            // If we have a text search pattern, filter by text content
-            if (textSearchPattern && element) {
-                if (!element.textContent.includes(textSearchPattern)) {
-                    element = null;
-                }
+            if (textSearchPattern && element && !element.textContent.includes(textSearchPattern)) {
+                element = null;
             }
-            
             if (element && element.offsetParent !== null) {
-                console.log(`[ONBOARD.AI] Found element with primary selector: ${action.target_selector}`);
                 return element;
             }
         } catch (e) {
             console.warn(`[ONBOARD.AI] Invalid selector: ${selector}`, e);
         }
         
-        // Strategy 2: Try alternatives
-        if (action.alternatives && action.alternatives.length > 0) {
+        if (action.alternatives) {
             for (const altSelector of action.alternatives) {
-                element = document.querySelector(altSelector);
-                if (element && element.offsetParent !== null) {
-                    console.log(`[ONBOARD.AI] Found element with alternative: ${altSelector}`);
-                    return element;
-                }
+                try {
+                    const element = document.querySelector(altSelector);
+                    if (element && element.offsetParent !== null) {
+                        return element;
+                    }
+                } catch (e) {}
             }
         }
         
-        // Strategy 3: Try to find by text content (use textSearchPattern or extract from message)
         const searchText = textSearchPattern || (action.message && action.action_type === 'click' ? 
             (action.message.toLowerCase().match(/['"]([^'"]+)['"]/g) || [])[0]?.replace(/['"]/g, '') : null);
         
         if (searchText) {
-            // Try to find the element with matching text
             const searchLower = searchText.toLowerCase();
-            
-            // For clickable elements
             if (action.action_type === 'click' || action.action_type === 'submit') {
-                const clickable = document.querySelectorAll('button, a, [role="button"], summary, input[type="submit"], [type="button"]');
+                const clickable = document.querySelectorAll('button, a, [role="button"], summary, input[type="submit"]');
                 for (const el of clickable) {
-                    if (el.textContent.toLowerCase().includes(searchLower) && el.offsetParent !== null) {
-                        console.log(`[ONBOARD.AI] Found element by text: ${searchText}`);
+                    if ((el.textContent.toLowerCase().includes(searchLower) || 
+                         el.getAttribute('aria-label')?.toLowerCase().includes(searchLower)) && 
+                        el.offsetParent !== null) {
                         return el;
-                    }
-                    // Also check aria-label
-                    const ariaLabel = el.getAttribute('aria-label');
-                    if (ariaLabel && ariaLabel.toLowerCase().includes(searchLower) && el.offsetParent !== null) {
-                        console.log(`[ONBOARD.AI] Found element by aria-label: ${searchText}`);
-                        return el;
-                    }
-                }
-            }
-            
-            // For labels (like "Add a README file")
-            if (selector.includes('label')) {
-                const labels = document.querySelectorAll('label');
-                for (const label of labels) {
-                    if (label.textContent.toLowerCase().includes(searchLower) && label.offsetParent !== null) {
-                        console.log(`[ONBOARD.AI] Found label by text: ${searchText}`);
-                        return label;
                     }
                 }
             }
         }
         
-        // Strategy 4: For GitHub specific - try common patterns
         if (window.location.hostname.includes('github.com')) {
-            // Creating repository button
-            if (action.message.toLowerCase().includes('create') && action.message.toLowerCase().includes('repository')) {
-                const createBtn = document.querySelector('button[type="submit"][data-disable-with]') ||
-                                 document.querySelector('button.btn-primary[type="submit"]') ||
-                                 document.querySelector('form button[type="submit"]:last-of-type');
-                if (createBtn && createBtn.offsetParent !== null) {
-                    console.log('[ONBOARD.AI] Found by GitHub pattern: create repository button');
-                    return createBtn;
-                }
+            if (action.message.toLowerCase().includes('repository name')) {
+                return document.querySelector('input[name="repository[name]"]');
             }
-            
-            // Plus menu for new repository
-            if (action.message.toLowerCase().includes('+') || action.message.toLowerCase().includes('menu')) {
-                const plusMenu = document.querySelector('summary[aria-label*="Create"]') ||
-                                document.querySelector('[data-target="create-menu.button"]') ||
-                                document.querySelector('summary[aria-label*="new"]');
-                if (plusMenu && plusMenu.offsetParent !== null) {
-                    console.log('[ONBOARD.AI] Found by GitHub pattern: plus menu');
-                    return plusMenu;
-                }
-            }
-            
-            // Repository name input
-            if (action.message.toLowerCase().includes('repository name') || 
-                action.message.toLowerCase().includes('give your') ||
-                selector.includes('repository')) {
-                const nameInput = document.querySelector('input[name="repository[name]"]') ||
-                                 document.querySelector('input#repository-name-input') ||
-                                 document.querySelector('input#repository_name') ||
-                                 document.querySelector('input[aria-label*="Repository name"]') ||
-                                 document.querySelector('input[placeholder*="repository"]');
-                if (nameInput && nameInput.offsetParent !== null) {
-                    console.log('[ONBOARD.AI] Found by GitHub pattern: repository name input');
-                    return nameInput;
-                }
-            }
-            
-            // Repository description input
             if (action.message.toLowerCase().includes('description')) {
-                const descInput = document.querySelector('input[name="repository[description]"]') ||
-                                 document.querySelector('textarea[name="repository[description]"]') ||
-                                 document.querySelector('input#repository-description-input') ||
-                                 document.querySelector('textarea#repository_description');
-                if (descInput && descInput.offsetParent !== null) {
-                    console.log('[ONBOARD.AI] Found by GitHub pattern: repository description input');
-                    return descInput;
-                }
+                return document.querySelector('input[name="repository[description]"]');
             }
-            
-            // README checkbox
-            if (action.message.toLowerCase().includes('readme') || selector.includes('auto_init')) {
-                const readmeCheckbox = document.querySelector('input[name="repository[auto_init]"]') ||
-                                      document.querySelector('input#repository_auto_init') ||
-                                      document.querySelector('input[type="checkbox"][value="1"]');
-                if (readmeCheckbox && readmeCheckbox.offsetParent !== null) {
-                    console.log('[ONBOARD.AI] Found by GitHub pattern: README checkbox');
-                    return readmeCheckbox;
-                }
+            if (action.message.toLowerCase().includes('readme')) {
+                return document.querySelector('input[name="repository[auto_init]"]');
+            }
+            if (action.message.toLowerCase().includes('create') && action.message.toLowerCase().includes('repository')) {
+                return document.querySelector('button[type="submit"][data-disable-with]');
             }
         }
         
-        console.warn(`[ONBOARD.AI] Could not find element for selector: ${selector}`);
         return null;
     }
 
     renderGuidance() {
         if (!this.currentGuidance || !this.currentGuidance.actions) {
-            console.warn('[ONBOARD.AI] No guidance actions to render');
             this.showGenericGuidanceMessage();
             return;
         }
         
-        console.log(`[ONBOARD.AI] Rendering ${this.currentGuidance.actions.length} guidance actions`);
-        
-        // Check if guidance is too generic (using body or html selectors)
         const hasGenericSelectors = this.currentGuidance.actions.some(action => 
-            action.target_selector === 'body' || 
-            action.target_selector === 'html' ||
-            action.target_selector === ''
+            !action.target_selector || action.target_selector === 'body' || action.target_selector === 'html'
         );
         
         if (hasGenericSelectors) {
-            console.warn('[ONBOARD.AI] Generic guidance detected, showing text-based instructions');
             this.showTextGuidance();
             return;
         }
@@ -707,15 +647,14 @@ class OnboardOverlay {
                 const element = this.findElement(action);
                 if (element) {
                     this.createOverlayForElement(element, action);
-                } else {
-                    console.warn(`[ONBOARD.AI] Action ${index + 1}: Element not found`, action);
                 }
             }, index * 300);
         });
     }
     
     showTextGuidance() {
-        // Show guidance as text instructions when specific selectors aren't available
+        document.getElementById('onboard-text-guidance')?.remove();
+        
         const guidanceBox = document.createElement('div');
         guidanceBox.className = 'onboard-text-guidance';
         guidanceBox.id = 'onboard-text-guidance';
@@ -727,28 +666,14 @@ class OnboardOverlay {
                 <div style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
                     ${this.currentGuidance.guidance_text || this.currentGuidance.actions.map(a => a.message).join('<br><br>')}
                 </div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="onboard-btn onboard-btn-secondary" id="text-guidance-close" style="flex: 1;">
-                        Got it
-                    </button>
-                </div>
+                <button class="onboard-btn onboard-btn-secondary" id="text-guidance-close" style="width: 100%;">
+                    Got it
+                </button>
             </div>
         `;
         
-        // Position in bottom-right
-        guidanceBox.style.cssText = `
-            position: fixed;
-            bottom: 80px;
-            right: 24px;
-            z-index: 999999;
-            animation: onboard-slidein 0.3s ease-out;
-        `;
-        
         document.body.appendChild(guidanceBox);
-        
-        document.getElementById('text-guidance-close').addEventListener('click', () => {
-            guidanceBox.remove();
-        });
+        document.getElementById('text-guidance-close').addEventListener('click', () => guidanceBox.remove());
     }
     
     showGenericGuidanceMessage() {
@@ -765,17 +690,12 @@ class OnboardOverlay {
                 <strong>Current step:</strong> ${this.currentTask.title} - Step ${this.currentTask.steps_completed + 1}
             </div>
             <div class="onboard-help-buttons">
-                <button class="onboard-btn onboard-btn-primary" id="generic-ok">
-                    Continue
-                </button>
+                <button class="onboard-btn onboard-btn-primary" id="generic-ok">Continue</button>
             </div>
         `;
         
         document.body.appendChild(message);
-        
-        document.getElementById('generic-ok').addEventListener('click', () => {
-            message.remove();
-        });
+        document.getElementById('generic-ok').addEventListener('click', () => message.remove());
     }
 
     createOverlayForElement(element, action) {
@@ -794,28 +714,15 @@ class OnboardOverlay {
         const tooltip = document.createElement('div');
         tooltip.className = 'onboard-tooltip onboard-overlay';
         tooltip.innerHTML = `
-            <div class="onboard-tooltip-arrow ${action.position}"></div>
+            <div class="onboard-tooltip-arrow ${action.position || 'bottom'}"></div>
             ${action.message}
         `;
         
         document.body.appendChild(tooltip);
         
         const tooltipRect = tooltip.getBoundingClientRect();
-        let left, top;
-        
-        if (action.position === 'bottom') {
-            left = rect.left + window.scrollX + (rect.width / 2) - (tooltipRect.width / 2);
-            top = rect.bottom + window.scrollY + 12;
-        } else if (action.position === 'top') {
-            left = rect.left + window.scrollX + (rect.width / 2) - (tooltipRect.width / 2);
-            top = rect.top + window.scrollY - tooltipRect.height - 12;
-        } else if (action.position === 'right') {
-            left = rect.right + window.scrollX + 12;
-            top = rect.top + window.scrollY + (rect.height / 2) - (tooltipRect.height / 2);
-        } else {
-            left = rect.left + window.scrollX - tooltipRect.width - 12;
-            top = rect.top + window.scrollY + (rect.height / 2) - (tooltipRect.height / 2);
-        }
+        let left = rect.left + window.scrollX + (rect.width / 2) - (tooltipRect.width / 2);
+        let top = rect.bottom + window.scrollY + 12;
         
         tooltip.style.left = `${Math.max(10, left)}px`;
         tooltip.style.top = `${Math.max(10, top)}px`;
@@ -823,42 +730,6 @@ class OnboardOverlay {
 
     clearOverlays() {
         document.querySelectorAll('.onboard-overlay').forEach(el => el.remove());
-    }
-
-    observePageChanges() {
-        let lastUrl = location.href;
-        new MutationObserver(() => {
-            const url = location.href;
-            if (url !== lastUrl) {
-                lastUrl = url;
-                setTimeout(() => this.updateGuidance(), 500);
-                setTimeout(() => this.attachCreateRepoSubmitListener(), 600);
-            }
-        }).observe(document, { subtree: true, childList: true });
-    }
-
-    attachCreateRepoSubmitListener() {
-        if (!location.href.includes('github.com/new')) return;
-        const submitBtn = document.querySelector("button[type='submit'][data-disable-with]") ||
-                         document.querySelector('button.btn-primary[type="submit"]') ||
-                         document.querySelector('form button[type="submit"]:last-of-type');
-        if (!submitBtn) return;
-
-        if (this._submitBound) return;
-        this._submitBound = true;
-
-        const handler = async (e) => {
-            try {
-                if (this.currentTask.steps_completed >= this.currentTask.total_steps) {
-                    return;
-                }
-                const next = Math.min(this.currentTask.steps_completed + 1, this.currentTask.total_steps);
-                await this.updateTaskProgress(next);
-                this.currentTask.steps_completed = next;
-                this.suppressUntil = Date.now() + 8000;
-            } catch (_) { /* ignore */ }
-        };
-        submitBtn.addEventListener('click', handler, { once: true });
     }
 
     showCompletionMessage() {
@@ -876,14 +747,11 @@ class OnboardOverlay {
                 <strong>${this.currentTask.title}</strong>
             </div>
             <div class="onboard-help-buttons">
-                <button class="onboard-btn onboard-btn-primary" id="onboard-finish">
-                    Awesome!
-                </button>
+                <button class="onboard-btn onboard-btn-primary" id="onboard-finish">Awesome!</button>
             </div>
         `;
         
         document.body.appendChild(completion);
-        
         document.getElementById('onboard-finish').addEventListener('click', () => {
             completion.remove();
             this.stopGuidance();
@@ -915,9 +783,16 @@ class OnboardOverlay {
 
     stopGuidance() {
         this.overlayVisible = false;
+        
+        if (this.urlCheckInterval) {
+            clearInterval(this.urlCheckInterval);
+            this.urlCheckInterval = null;
+        }
+        
         this.clearOverlays();
         document.getElementById('onboard-task-banner')?.remove();
         document.getElementById('onboard-progress-bar')?.remove();
+        document.getElementById('onboard-text-guidance')?.remove();
     }
 }
 
@@ -932,19 +807,37 @@ if (document.readyState === 'loading') {
 
 // Listen for messages
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'refresh_guidance') {
-        if (window.__onboardOverlay) {
-            window.__onboardOverlay.updateGuidance();
-        }
+    console.log('[ONBOARD.AI] Received message:', request);
+    
+    if (request.action === 'refresh_guidance' && window.__onboardOverlay) {
+        window.__onboardOverlay.updateGuidance();
+        sendResponse({ success: true });
     }
     
     if (request.action === 'start_guidance') {
-        if (window.__onboardOverlay) window.__onboardOverlay.startGuidance();
+        console.log('[ONBOARD.AI] Starting guidance...');
+        if (window.__onboardOverlay) {
+            window.__onboardOverlay.startGuidance()
+                .then(() => {
+                    console.log('[ONBOARD.AI] Guidance started successfully');
+                    sendResponse({ success: true });
+                })
+                .catch(err => {
+                    console.error('[ONBOARD.AI] Failed to start guidance:', err);
+                    sendResponse({ success: false, error: err.message });
+                });
+        } else {
+            console.error('[ONBOARD.AI] Overlay not initialized');
+            sendResponse({ success: false, error: 'Overlay not initialized' });
+        }
+        return true; // Keep channel open for async response
     }
-
+    
     if (request.action === 'check_task') {
         sendResponse({ present: !!window.__onboardOverlay });
     }
+    
+    return true; // Keep message channel open
 });
 
 } // End of if (!window.__ONBOARD_LOADED)
