@@ -455,10 +455,7 @@ class OnboardPopup {
             const data = await response.json();
             
             if (data.success) {
-                this.addMessage('✅ Task created! Switching to Tasks tab...', 'ai');
-                
-                // Wait a bit for backend to process
-                await new Promise(resolve => setTimeout(resolve, 500));
+                this.addMessage('✅ Task created successfully!', 'ai');
                 
                 // Reload task list
                 await this.loadAllTasks();
@@ -466,7 +463,8 @@ class OnboardPopup {
                 // Switch to task view
                 setTimeout(() => {
                     this.switchView('task');
-                }, 800);
+                    this.addMessage('Check the Tasks tab to start guidance!', 'ai');
+                }, 1000);
             }
         } catch (error) {
             this.addMessage('Failed to create task. Please make sure the backend is running.', 'ai');

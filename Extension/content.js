@@ -130,6 +130,7 @@ class OnboardOverlay {
         style.textContent = `
             .onboard-overlay {
                 position: fixed;
+                z-index: 999999;
                 pointer-events: none;
             }
             
@@ -139,7 +140,8 @@ class OnboardOverlay {
                 border-radius: 8px;
                 box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.2), 0 0 20px rgba(139, 92, 246, 0.4);
                 animation: onboard-pulse 2s infinite;
-                pointer-events: none !important;
+                pointer-events: none;
+                z-index: 999998;
             }
             
             @keyframes onboard-pulse {
@@ -158,9 +160,9 @@ class OnboardOverlay {
                 line-height: 1.5;
                 max-width: 320px;
                 box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+                pointer-events: auto;
+                z-index: 999999;
                 animation: onboard-fadein 0.3s ease-out;
-                pointer-events: none !important;
-                user-select: none;
             }
             
             @keyframes onboard-fadein {
@@ -402,6 +404,14 @@ class OnboardOverlay {
     }
 
     async startGuidance() {
+        console.log('[ONBOARD.AI] startGuidance called, currentTask:', this.currentTask);
+        
+        if (!this.currentTask) {
+            console.error('[ONBOARD.AI] No currentTask set! Cannot start guidance.');
+            alert('No task selected. Please select a task first.');
+            return;
+        }
+        
         this.overlayVisible = true;
         
         this.showMiniIndicator();
@@ -426,20 +436,11 @@ class OnboardOverlay {
     }
 
     async onUrlChange() {
-        console.log("[ONBOARD.AI] URL changed, updating guidance...");
         this.clearOverlays();
         document.getElementById('onboard-text-guidance')?.remove();
         await new Promise(resolve => setTimeout(resolve, 800));
-
-        // Recheck for active task each time page changes
-        const stillHasTask = await this.checkForTask();
-        if (stillHasTask) {
-            await this.updateGuidance();
-        } else {
-            console.warn("[ONBOARD.AI] No active task found on this page");
-        }
+        await this.updateGuidance();
     }
-
 
     showMiniIndicator() {
         document.getElementById('onboard-mini-indicator')?.remove();
@@ -488,12 +489,6 @@ class OnboardOverlay {
                 task_id: this.currentTask.id,
                 current_step: this.currentTask.steps_completed
             };
-            if (window.location.href.match(/github\.com\/[^/]+\/[^/]+/)) {
-                context.page_context = "repository";
-            } else if (window.location.href.includes("/new")) {
-                context.page_context = "repo_creation";
-            }
-            console.log("[ONBOARD.AI] Current page context:", context.page_context);
             
             console.log('[ONBOARD.AI] Fetching guidance for step:', this.currentTask.steps_completed);
             
@@ -699,21 +694,6 @@ class OnboardOverlay {
     createOverlayForElement(element, action) {
         const rect = element.getBoundingClientRect();
         
-        // Check if element is likely inside a dropdown/modal (high z-index parent)
-        let parent = element.parentElement;
-        let hasHighZIndex = false;
-        while (parent && parent !== document.body) {
-            const zIndex = window.getComputedStyle(parent).zIndex;
-            if (zIndex && parseInt(zIndex) > 100000) {
-                hasHighZIndex = true;
-                break;
-            }
-            parent = parent.parentElement;
-        }
-        
-        // Use a z-index just below GitHub's dropdowns if needed
-        const baseZIndex = hasHighZIndex ? 99999 : 999998;
-        
         if (action.action_type === 'highlight' || action.action_type === 'click') {
             const highlight = document.createElement('div');
             highlight.className = 'onboard-highlight onboard-overlay';
@@ -721,7 +701,6 @@ class OnboardOverlay {
             highlight.style.top = `${rect.top + window.scrollY - 4}px`;
             highlight.style.width = `${rect.width + 8}px`;
             highlight.style.height = `${rect.height + 8}px`;
-            highlight.style.zIndex = baseZIndex;
             document.body.appendChild(highlight);
         }
         
@@ -738,16 +717,8 @@ class OnboardOverlay {
         let left = rect.left + window.scrollX + (rect.width / 2) - (tooltipRect.width / 2);
         let top = rect.bottom + window.scrollY + 12;
         
-        // Position tooltip below the element by default
-        // If it would go off-screen, position above
-        if (top + tooltipRect.height > window.innerHeight + window.scrollY) {
-            top = rect.top + window.scrollY - tooltipRect.height - 12;
-            tooltip.querySelector('.onboard-tooltip-arrow')?.classList.replace('bottom', 'top');
-        }
-        
         tooltip.style.left = `${Math.max(10, left)}px`;
         tooltip.style.top = `${Math.max(10, top)}px`;
-        tooltip.style.zIndex = baseZIndex + 1;
     }
 
     clearOverlays() {
@@ -837,17 +808,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     
     if (request.action === 'start_guidance') {
-        console.log('[ONBOARD.AI] Starting guidance...');
+        console.log('[ONBOARD.AI] Received start_guidance message, task_id:', request.task_id);
         if (window.__onboardOverlay) {
-            window.__onboardOverlay.startGuidance()
-                .then(() => {
+            // If caller passed a task_id, set that task as current before starting
+            (async () => {
+                try {
+                    if (request.task_id) {
+                        console.log('[ONBOARD.AI] Fetching task by id:', request.task_id);
+                        // Fetch all tasks for employee and find the specified task
+                        try {
+                            const res = await fetch(`${window.__ONBOARD.API_BASE}/api/employees/${window.__ONBOARD.EMPLOYEE_ID}/tasks`);
+                            if (res.ok) {
+                                const tasks = await res.json();
+                                console.log('[ONBOARD.AI] Fetched tasks:', tasks.length);
+                                const found = tasks.find(t => String(t.id) === String(request.task_id));
+                                if (found) {
+                                    console.log('[ONBOARD.AI] Setting currentTask to:', found.title, found.type);
+                                    window.__onboardOverlay.currentTask = found;
+                                } else {
+                                    console.warn('[ONBOARD.AI] Task not found in list:', request.task_id);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('[ONBOARD.AI] Could not prefetch tasks before start:', e);
+                        }
+                    }
+
+                    console.log('[ONBOARD.AI] Starting guidance with task:', window.__onboardOverlay.currentTask);
+                    await window.__onboardOverlay.startGuidance();
                     console.log('[ONBOARD.AI] Guidance started successfully');
                     sendResponse({ success: true });
-                })
-                .catch(err => {
+                } catch (err) {
                     console.error('[ONBOARD.AI] Failed to start guidance:', err);
                     sendResponse({ success: false, error: err.message });
-                });
+                }
+            })();
         } else {
             console.error('[ONBOARD.AI] Overlay not initialized');
             sendResponse({ success: false, error: 'Overlay not initialized' });
