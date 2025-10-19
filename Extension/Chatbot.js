@@ -1,7 +1,9 @@
 // popup.js - Unified Task & Chat Interface
 
-const API_BASE = 'http://localhost:8000';
-const EMPLOYEE_ID = 'emp_001';
+// Use shared global config if available
+window.__ONBOARD = window.__ONBOARD || { API_BASE: 'http://localhost:8000', EMPLOYEE_ID: 'emp_001' };
+const API_BASE = window.__ONBOARD.API_BASE;
+const EMPLOYEE_ID = window.__ONBOARD.EMPLOYEE_ID;
 
 class OnboardPopup {
     constructor() {
@@ -413,6 +415,10 @@ class OnboardPopup {
                     task: task
                 })
             });
+            
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
             
             const data = await response.json();
             

@@ -58,22 +58,69 @@ class GuidanceGenerator:
         """Return the KB action dict for a given platform and action id.
 
         platform may be a short key like 'github' or full hostname; we try both.
+        action_id can be full task type like 'github_repo_creation' or partial like 'create_repository'
         """
+        logger.info(f"get_action_definition called with platform='{platform}', action_id='{action_id}'")
         platforms = self.kb.get('platforms', {})
-        if platform in platforms:
-            actions = platforms[platform].get('actions', {})
-            # action_id could be key or id field; try both
+        
+        # Extract platform short name from full domain if needed
+        # e.g., "github.com" -> "github"
+        platform_key = platform.split('.')[0] if '.' in platform else platform
+        logger.info(f"Extracted platform_key: '{platform_key}'")
+        
+        # First try direct platform match
+        if platform_key in platforms:
+            actions = platforms[platform_key].get('actions', {})
+            
+            # Try action_id as direct key
             if action_id in actions:
                 return actions[action_id]
-            # fallback: match by id property
+            
+            # Try action_id as the 'id' field value
             for k, v in actions.items():
                 if v.get('id') == action_id:
                     return v
-        # try matching by id across all platforms
+            
+            # Try matching by task type format (e.g., "github_repo_creation" -> "create_repository")
+            # Common patterns: {platform}_{action} where action might be "repo_creation" -> "create_repository"
+            if '_' in action_id:
+                # Remove platform prefix if present
+                action_part = action_id.replace(f"{platform_key}_", "")
+                
+                # Try variations
+                variations = [
+                    action_part,  # "repo_creation"
+                    action_part.replace('_', ' '),  # "repo creation"
+                    f"create_{action_part.replace('repo_', 'repository_')}",  # "create_repository_creation"
+                ]
+                
+                # Check title and id fields for matches
+                for k, v in actions.items():
+                    title_lower = v.get('title', '').lower()
+                    id_lower = v.get('id', '').lower()
+                    
+                    # Check if any variation appears in title or id
+                    for var in variations:
+                        if var.replace('_', ' ') in title_lower or var in id_lower:
+                            return v
+                    
+                    # Special case: "repo_creation" matches "create_repository"
+                    if 'creation' in action_part and 'create' in k:
+                        if 'repo' in action_part and 'repository' in k:
+                            logger.info(f"Matched '{action_id}' to action '{k}' via creation+repo pattern")
+                            return v
+                    
+                    # Another special case: "github_repo_creation" matches "create_repository"
+                    if action_id.endswith('_repo_creation') and k == 'create_repository':
+                        logger.info(f"Matched '{action_id}' to 'create_repository' via direct pattern")
+                        return v
+        
+        # Fallback: try matching by id across all platforms
         for p, pdata in platforms.items():
             for k, v in pdata.get('actions', {}).items():
-                if v.get('id') == action_id:
+                if v.get('id') == action_id or k == action_id:
                     return v
+        
         return None
 
     def generate_guidance(self, platform: str, action_id: str, context: Dict[str, Any], current_step: int) -> KBGuidance:

@@ -5,7 +5,7 @@ platforms:
   github:
     name: "GitHub"
     base_url: "github.com"
-    
+
     actions:
       create_repository:
         id: "github_create_repo"
@@ -20,36 +20,36 @@ platforms:
               - "a[href='/new']"
             message: "👋 Click the '+' menu and select 'New repository'"
             tip: "💡 A repository is like a project folder that tracks all your code changes"
-            
+
           - step: 2
             page_pattern: "*github.com/new"
             action: "fill_form"
             selectors:
-              - selector: "input#repository_name"
-                message: "📝 Enter your repository name here"
+              - selector: "input[name='repository[name]']"
+                message: "First, give your new repository a name. Make it short and memorable!"
                 required: true
-              - selector: "textarea#repository_description"
-                message: "Add a description (optional but recommended)"
+              - selector: "input[name='repository[description]']"
+                message: "Now, add a brief description. This helps others understand your project."
                 required: false
-              - selector: "input#repository_auto_init"
-                message: "✅ Check this to add a README file"
+              - selector: "input[name='repository[auto_init]']"
+                message: "✅ Check 'Add a README file' - it's the first thing people see!"
                 required: true
             tip: "💡 Pro tip: Always add a README - it's the first thing people see!"
-            
+
           - step: 3
             page_pattern: "*github.com/new"
             action: "submit"
             selectors:
               - "button[type='submit'].btn-primary"
             message: "🚀 Click 'Create repository' when ready"
-            
+
           - step: 4
             page_pattern: "*github.com/*/blob/*"
             completion_indicators:
               - "repository-content"
               - "#code-tab"
             message: "🎉 Repository created successfully!"
-            
+
       clone_repository:
         id: "github_clone"
         title: "Clone a Repository"
@@ -61,7 +61,7 @@ platforms:
               - "button#code-button"
               - "button[data-target*='get-repo']"
             message: "Click the 'Code' button to get the clone URL"
-            
+
           - step: 2
             page_pattern: "*github.com/*/*"
             action: "copy"
@@ -70,7 +70,7 @@ platforms:
               - ".clipboard-copy-text"
             message: "Copy the repository URL"
             tip: "Next: Open your terminal and run 'git clone [paste-url]'"
-            
+
       create_pull_request:
         id: "github_pr"
         title: "Create a Pull Request"
@@ -85,14 +85,14 @@ platforms:
               - "a[href*='/pull/new']"
               - "button[data-ga-click*='pull request']"
             message: "Click 'Pull requests' tab, then 'New pull request'"
-            
+
           - step: 2
             page_pattern: "*github.com/*/compare/*"
             action: "select"
             selectors:
               - "button.branch-select"
             message: "Select your branch to compare"
-            
+
           - step: 3
             page_pattern: "*github.com/*/compare/*"
             action: "fill_form"
@@ -104,14 +104,14 @@ platforms:
                 message: "Describe what changes you made and why"
                 required: true
             tip: "A good PR description helps reviewers understand your changes"
-            
+
           - step: 4
             page_pattern: "*github.com/*/compare/*"
             action: "submit"
             selectors:
               - "button.btn-primary[type='submit']"
             message: "Click 'Create pull request'"
-            
+
       create_issue:
         id: "github_issue"
         title: "Create an Issue"
@@ -122,14 +122,14 @@ platforms:
             selectors:
               - "a[href*='/issues']"
             message: "Click on the 'Issues' tab"
-            
+
           - step: 2
             page_pattern: "*github.com/*/issues"
             action: "click"
             selectors:
               - "a[href*='/issues/new']"
             message: "Click 'New issue' button"
-            
+
           - step: 3
             page_pattern: "*github.com/*/issues/new"
             action: "fill_form"
@@ -140,14 +140,14 @@ platforms:
               - selector: "textarea#issue_body"
                 message: "Describe the issue in detail"
                 required: true
-            
+
           - step: 4
             page_pattern: "*github.com/*/issues/new"
             action: "submit"
             selectors:
               - "button.btn-primary[type='submit']"
             message: "Click 'Submit new issue'"
-            
+
       fork_repository:
         id: "github_fork"
         title: "Fork a Repository"
@@ -160,7 +160,7 @@ platforms:
               - "a[href*='/fork']"
             message: "Click the 'Fork' button in the top right"
             tip: "Forking creates your own copy of the repository"
-            
+
           - step: 2
             completion_indicators:
               - "forked from"
@@ -169,7 +169,7 @@ platforms:
   slack:
     name: "Slack"
     base_url: "slack.com"
-    
+
     actions:
       create_channel:
         id: "slack_channel"
@@ -182,14 +182,14 @@ platforms:
               - "button[data-qa='channel_browser']"
               - "button[aria-label*='channel']"
             message: "Click 'Channels' in the sidebar"
-            
+
           - step: 2
             page_pattern: "*slack.com/*"
             action: "click"
             selectors:
               - "button[data-qa='channel_browser_action_button']"
             message: "Click 'Create channel'"
-            
+
           - step: 3
             action: "fill_form"
             selectors:
@@ -199,7 +199,7 @@ platforms:
               - selector: "textarea[data-qa='channel_description_input']"
                 message: "Add channel description"
                 required: false
-            
+
       send_message:
         id: "slack_message"
         title: "Send a Slack Message"
@@ -207,7 +207,7 @@ platforms:
           - step: 1
             action: "navigate"
             message: "Navigate to the channel or DM"
-            
+
           - step: 2
             action: "fill_form"
             selectors:
@@ -219,7 +219,7 @@ platforms:
   jira:
     name: "Jira"
     base_url: "atlassian.net"
-    
+
     actions:
       create_ticket:
         id: "jira_ticket"
@@ -232,7 +232,7 @@ platforms:
               - "button[data-test-id='global-pages.directories.directory-base.content-area.create-button']"
               - "button#createGlobalItem"
             message: "Click the 'Create' button in the top navigation"
-            
+
           - step: 2
             action: "fill_form"
             selectors:
@@ -246,7 +246,7 @@ platforms:
                 message: "Select issue type (Bug, Task, Story, etc.)"
                 required: true
             tip: "Be specific in your description - it helps the team understand the issue"
-            
+
           - step: 3
             action: "submit"
             selectors:
@@ -256,7 +256,7 @@ platforms:
   figma:
     name: "Figma"
     base_url: "figma.com"
-    
+
     actions:
       create_file:
         id: "figma_file"
@@ -268,7 +268,7 @@ platforms:
             selectors:
               - "button[data-testid='new-file-button']"
             message: "Click 'New File' button"
-            
+
           - step: 2
             action: "navigate"
             message: "Your new design file is ready!"

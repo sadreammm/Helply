@@ -1,6 +1,7 @@
 # app.py - ONBOARD.AI Backend with Simplified CRM
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -27,18 +28,18 @@ with open('action_kb.yaml', 'r', encoding='utf-8') as f:
 # ============= INITIALIZE AI ENGINE =============
 
 def initialize_ai_engine() -> Optional[AIGuidanceEngine]:
-    """Initialize OpenAI guidance engine"""
+    """Initialize Gemini guidance engine"""
     
-    if not settings.use_ai_guidance or not settings.openai_api_key:
+    if not settings.use_ai_guidance or not settings.gemini_api_key:
         logger.info("AI guidance disabled, using KB-only mode")
         return None
     
     try:
-        logger.info(f"Initializing OpenAI engine: {settings.openai_model}")
+        logger.info(f"Initializing Gemini engine: {settings.gemini_model}")
         
         ai_engine = AIGuidanceEngine(
-            api_key=settings.openai_api_key,
-            model=settings.openai_model
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model
         )
         
         logger.info(f"✓ AI guidance engine initialized")
@@ -176,9 +177,25 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
     if not current_task:
         raise HTTPException(status_code=404, detail="No active task found")
     
-    # Parse task type
-    platform = current_task.get('platform', '')
-    action_id = current_task['type'].replace(f"{platform}_", "") if platform else current_task['type']
+    # Parse task type and platform
+    # Task type format: {platform}_{action} (e.g., "github_repo_creation")
+    # Platform in task may be full domain (e.g., "github.com")
+    # Platform in KB is short key (e.g., "github")
+    task_type = current_task['type']
+    task_platform = current_task.get('platform', '')
+    
+    # Extract platform from task type (first part before underscore)
+    # e.g., "github_repo_creation" -> platform="github", action="repo_creation"
+    if '_' in task_type:
+        platform, action_part = task_type.split('_', 1)
+    else:
+        platform = task_platform.split('.')[0] if '.' in task_platform else task_platform
+        action_part = task_type
+    
+    # Map action part to KB action id
+    # e.g., "repo_creation" -> "create_repository" or use as-is
+    # For now, try multiple variations
+    action_id = task_type  # try full type first
     
     try:
         # Use AI if available, otherwise KB
@@ -210,10 +227,37 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
                     priority=action.priority,
                     alternatives=action.alternatives
                 ))
+            
+            guidance_tip = ai_guidance.tip
+            guidance_explanation = ai_guidance.explanation
+            guidance_confidence = ai_guidance.confidence
+            guidance_next_step = ai_guidance.next_step_prediction
         else:
             # Fallback to KB
-            kb_guidance = kb_engine.generate_guidance(platform, action_id, context, current_task['steps_completed'])
-            overlay_actions = kb_guidance.get('actions', [])
+            logger.info(f"Using KB guidance: platform='{platform}', action_id='{action_id}', step={current_task['steps_completed']}")
+            kb_guidance = kb_engine.generate_guidance(platform, action_id, context.dict(), current_task['steps_completed'])
+            
+            logger.info(f"KB guidance returned {len(kb_guidance.actions)} actions")
+            for i, act in enumerate(kb_guidance.actions):
+                logger.info(f"  Action {i+1}: selector='{act.selector}', type='{act.action_type}', msg='{act.message[:50]}...'")
+            
+            # Convert KB response to OverlayAction format
+            overlay_actions = []
+            for kb_action in kb_guidance.actions:
+                overlay_actions.append(OverlayAction(
+                    target_selector=kb_action.selector,
+                    action_type=kb_action.action_type,
+                    message=kb_action.message,
+                    position="bottom",
+                    animation="pulse" if kb_action.action_type in ['click', 'submit'] else "fade",
+                    priority=kb_action.priority,
+                    alternatives=kb_action.alternatives
+                ))
+            
+            guidance_tip = kb_guidance.tip
+            guidance_explanation = kb_guidance.explanation
+            guidance_confidence = kb_guidance.confidence
+            guidance_next_step = kb_guidance.next_step_prediction
         
         # Check if task complete
         detected_step = current_task['steps_completed']
@@ -231,13 +275,13 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
         
         return GuidanceResponse(
             actions=overlay_actions,
-            tip=ai_guidance.tip,
-            explanation=ai_guidance.explanation,
+            tip=guidance_tip,
+            explanation=guidance_explanation,
             step_number=current_task['steps_completed'] + 1,
             total_steps=current_task['total_steps'],
             task_complete=task_complete,
-            confidence=ai_guidance.confidence,
-            next_step_prediction=ai_guidance.next_step_prediction,
+            confidence=guidance_confidence,
+            next_step_prediction=guidance_next_step,
             ai_generated=settings.use_ai_guidance
         )
     
@@ -289,15 +333,21 @@ What is the user trying to accomplish? Return JSON:
     "confidence": 0.0-1.0
 }}"""
             
-            # Get AI interpretation (OpenAI only)
-            response = await ai_engine.client.chat.completions.create(
-                model=ai_engine.model,
-                messages=[{"role": "user", "content": ai_prompt}],
-                temperature=0.3,
-                response_format={"type": "json_object"}
-            )
+            # Get AI interpretation (Gemini)
+            import asyncio
             import json
-            ai_intent = json.loads(response.choices[0].message.content)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: ai_engine.client.generate_content(
+                    ai_prompt,
+                    generation_config={
+                        "temperature": 0.3,
+                        "response_mime_type": "application/json"
+                    }
+                )
+            )
+            ai_intent = json.loads(response.text)
             
             # Re-match with AI-clarified intent
             clarified_query = f"{ai_intent['platform']} {ai_intent['action']}"
@@ -388,30 +438,51 @@ async def get_employee_task(request: Dict):
 @app.post("/api/chat/create-task")
 async def create_task_from_chat(data: Dict):
     """Create CRM task from chat"""
-    employee_id = data['employee_id']
-    task_data = data['task']
-    
-    # Get step count from KB
     try:
-        action_def = ACTION_KB['platforms'][task_data['platform']]['actions'][task_data['action_id']]
-        total_steps = len(action_def['steps'])
-    except:
-        total_steps = 5  # Default
-    
-    crm_task = await crm.create_task(
-        employee_id=employee_id,
-        title=task_data['title'],
-        type=f"{task_data['platform']}_{task_data['action_id']}",
-        platform=task_data['platform'],
-        description=f"Task created via AI chat: {task_data['title']}",
-        total_steps=total_steps
-    )
-    
-    return {
-        "success": True,
-        "task_id": crm_task['id'],
-        "message": "Task created! Starting AI-powered guidance..."
-    }
+        employee_id = data.get('employee_id')
+        task_data = data.get('task', {})
+        
+        if not employee_id or not task_data:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "Missing employee_id or task data"}
+            )
+        
+        # Get step count from KB
+        try:
+            platform_key = task_data.get('platform', '').split('.')[0]
+            action_id = task_data.get('action_id', '')
+            action_def = ACTION_KB['platforms'][platform_key]['actions'][action_id]
+            total_steps = len(action_def['steps'])
+        except Exception as e:
+            logger.warning(f"Could not determine steps from KB: {e}")
+            total_steps = 3  # Default
+        
+        task_dict = {
+            "title": task_data.get('title', 'Untitled Task'),
+            "description": f"Task created via AI chat: {task_data.get('title', 'Task')}",
+            "type": f"{platform_key}_{action_id}",
+            "platform": task_data.get('platform', platform_key),
+            "total_steps": total_steps,
+            "priority": 1
+        }
+        
+        task_id = await crm.create_task(employee_id=employee_id, task=task_dict)
+        
+        if not task_id:
+            raise Exception("Failed to create task in CRM")
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "message": "Task created! Starting AI-powered guidance..."
+        }
+    except Exception as e:
+        logger.error(f"Error creating task from chat: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
 
 @app.post("/api/task/progress")
 async def update_task_progress(data: Dict):

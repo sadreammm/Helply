@@ -1,6 +1,6 @@
 """
 Simplified Configuration for ONBOARD.AI
-Only OpenAI + Generic REST API
+Only Gemini + Generic REST API
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
@@ -8,10 +8,11 @@ from typing import Optional
 class Settings(BaseSettings):
     """Application settings from environment variables"""
     
-    # ============= AI CONFIGURATION (OpenAI Only) =============
+    # ============= AI CONFIGURATION (Gemini Only) =============
     use_ai_guidance: bool = True
-    openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4-turbo-preview"
+    ai_provider: str = "gemini"  # Always gemini in simplified version
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-1.5-pro"
     
     # ============= CRM CONFIGURATION (Generic REST API Only) =============
     crm_api_base_url: str = "http://localhost:3000/api"

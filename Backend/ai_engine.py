@@ -1,4 +1,4 @@
-# ai_engine.py - OpenAI-Powered Guidance Engine
+# ai_engine.py - Gemini-Powered Guidance Engine
 
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
@@ -42,29 +42,30 @@ class AIGuidanceResponse(BaseModel):
 
 
 class AIGuidanceEngine:
-    """OpenAI-powered guidance engine"""
+    """Gemini-powered guidance engine"""
     
-    def __init__(self, api_key: str, model: str = "gpt-4-turbo-preview"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-pro"):
         self.api_key = api_key
         self.model = model
         self.client = None
         self._initialize_client()
     
     def _initialize_client(self):
-        """Initialize OpenAI client"""
+        """Initialize Gemini client"""
         try:
-            from openai import AsyncOpenAI
-            self.client = AsyncOpenAI(api_key=self.api_key)
-            logger.info(f"✓ OpenAI client initialized (model: {self.model})")
+            import google.generativeai as genai
+            genai.configure(api_key=self.api_key)
+            self.client = genai.GenerativeModel(self.model)
+            logger.info(f"✓ Gemini client initialized (model: {self.model})")
         except ImportError:
-            logger.error("OpenAI package not installed. Run: pip install openai")
-            raise ImportError("Install openai package: pip install openai")
+            logger.error("Google Generative AI package not installed. Run: pip install google-generativeai")
+            raise ImportError("Install google-generativeai package: pip install google-generativeai")
     
     async def generate_guidance(self, request: GuidanceRequest) -> AIGuidanceResponse:
-        """Generate context-aware guidance using OpenAI"""
+        """Generate context-aware guidance using Gemini"""
         
         if not self.client:
-            logger.error("OpenAI client not initialized")
+            logger.error("Gemini client not initialized")
             return self._create_fallback_guidance(request)
         
         try:
@@ -72,14 +73,14 @@ class AIGuidanceEngine:
             system_prompt = self._build_system_prompt()
             user_prompt = self._build_user_prompt(request)
             
-            # Call OpenAI
-            response = await self._call_openai(system_prompt, user_prompt)
+            # Call Gemini
+            response = await self._call_gemini(system_prompt, user_prompt)
             
             # Parse and validate response
             return self._parse_ai_response(response, request)
         
         except Exception as e:
-            logger.error(f"AI guidance generation failed: {e}")
+            logger.error(f"AI guidance generation failed: {e}", exc_info=True)
             return self._create_fallback_guidance(request)
     
     def _build_system_prompt(self) -> str:
@@ -144,18 +145,27 @@ Analyze this page and provide guidance for step {request.step_number}. What shou
 
 Return ONLY valid JSON matching the specified format."""
     
-    async def _call_openai(self, system_prompt: str, user_prompt: str) -> str:
-        """Call OpenAI API"""
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3,  # Lower for more consistent results
-            response_format={"type": "json_object"}  # Force JSON
+    async def _call_gemini(self, system_prompt: str, user_prompt: str) -> str:
+        """Call Gemini API"""
+        import asyncio
+        
+        # Combine system and user prompts for Gemini
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        
+        # Gemini doesn't have native async, so wrap in executor
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: self.client.generate_content(
+                full_prompt,
+                generation_config={
+                    "temperature": 0.3,
+                    "response_mime_type": "application/json"
+                }
+            )
         )
-        return response.choices[0].message.content
+        
+        return response.text
     
     def _parse_ai_response(self, ai_response: str, request: GuidanceRequest) -> AIGuidanceResponse:
         """Parse and validate AI response"""

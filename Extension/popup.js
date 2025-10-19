@@ -1,7 +1,8 @@
 // popup.js - Extension popup script
 
-const API_BASE = 'http://localhost:8000';
-const EMPLOYEE_ID = 'emp_001'; // In production, get from storage/auth
+window.__ONBOARD = window.__ONBOARD || { API_BASE: 'http://localhost:8000', EMPLOYEE_ID: 'emp_001' };
+const API_BASE = window.__ONBOARD.API_BASE;
+const EMPLOYEE_ID = window.__ONBOARD.EMPLOYEE_ID; // In production, get from storage/auth
 
 async function loadCurrentTask() {
     try {
