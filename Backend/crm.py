@@ -1,7 +1,4 @@
-"""
-Simplified CRM Module for ONBOARD.AI
-Only uses Generic REST API for task management
-"""
+
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import requests
@@ -10,12 +7,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class SimpleCRM:
-    """
-    Simplified CRM that works with any REST API
-    Supports: get tasks, create tasks, update tasks, delete completed tasks
-    """
-    
+class CRM:
+   
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
@@ -26,16 +19,14 @@ class SimpleCRM:
         })
     
     async def connect(self) -> bool:
-        """Test API connection"""
         try:
             response = self.session.get(f"{self.base_url}/health")
             return response.status_code == 200
         except Exception as e:
             logger.warning(f"API connection test failed: {e}")
-            return True  # Continue anyway for local development
+            return True 
     
     async def get_employee(self, employee_id: str) -> Optional[Dict]:
-        """Fetch employee details"""
         try:
             response = self.session.get(f"{self.base_url}/employees/{employee_id}")
             
@@ -53,10 +44,6 @@ class SimpleCRM:
             return {"id": employee_id, "name": "Unknown", "email": "", "role": "Employee"}
     
     async def get_tasks(self, employee_id: str) -> List[Dict]:
-        """
-        Fetch all active tasks for employee
-        Returns tasks that are NOT completed
-        """
         try:
             response = self.session.get(
                 f"{self.base_url}/employees/{employee_id}/tasks",
@@ -92,16 +79,6 @@ class SimpleCRM:
             return []
     
     async def create_task(self, employee_id: str, task: Dict) -> Optional[str]:
-        """
-        Create a new task
-        
-        Args:
-            employee_id: Employee to assign to
-            task: Dict with title, description, type, platform, total_steps, priority
-        
-        Returns:
-            Task ID if created successfully
-        """
         try:
             payload = {
                 "employee_id": employee_id,
@@ -136,16 +113,9 @@ class SimpleCRM:
     
     async def update_task(self, task_id: str, employee_id: str, 
                          steps_completed: int, status: str) -> bool:
-        """
-        Update task progress
-        If status is 'completed', the task will be deleted from CRM
-        """
         try:
-            # If completed, delete the task
             if status == 'completed':
                 return await self.delete_task(task_id, employee_id)
-            
-            # Otherwise update progress
             payload = {
                 "steps_completed": steps_completed,
                 "status": status,
@@ -164,18 +134,13 @@ class SimpleCRM:
             return False
     
     async def delete_task(self, task_id: str, employee_id: str) -> bool:
-        """
-        Delete completed task from CRM
-        """
         try:
-            # Log completion before deleting
             await self.log_action(employee_id, "task_completed", {"task_id": task_id})
             
-            # Delete task
             response = self.session.delete(f"{self.base_url}/tasks/{task_id}")
             
             if response.status_code in [200, 204]:
-                logger.info(f"✓ Task deleted: {task_id}")
+                logger.info(f"Task deleted: {task_id}")
                 return True
             
             logger.warning(f"Failed to delete task: {response.status_code}")
@@ -186,7 +151,6 @@ class SimpleCRM:
             return False
     
     async def log_action(self, employee_id: str, action: str, metadata: Dict) -> bool:
-        """Log employee actions for analytics"""
         try:
             payload = {
                 "employee_id": employee_id,
@@ -207,19 +171,8 @@ class SimpleCRM:
             return False
     
     async def disconnect(self):
-        """Cleanup"""
         self.session.close()
 
 
-def get_crm(base_url: str, api_key: str) -> SimpleCRM:
-    """
-    Factory function to create CRM instance
-    
-    Args:
-        base_url: Your REST API base URL
-        api_key: Your API key for authentication
-    
-    Returns:
-        SimpleCRM instance
-    """
-    return SimpleCRM(base_url, api_key)
+def get_crm(base_url: str, api_key: str) -> CRM:
+    return CRM(base_url, api_key)
