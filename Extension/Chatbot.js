@@ -199,11 +199,6 @@ class OnboardPopup {
         const icons = {
             'github': '🐙',
             'github.com': '🐙',
-            'slack': '💬',
-            'slack.com': '💬',
-            'jira': '📋',
-            'atlassian': '📋',
-            'figma': '🎨'
         };
         return icons[platform.toLowerCase()] || '📋';
     }
@@ -476,7 +471,7 @@ class OnboardPopup {
         let badgeClass = 'confidence-low';
         let label = 'Low match';
         
-        if (confidence >= 0.7) {
+        if (confidence >= 0.6) {
             badgeClass = 'confidence-high';
             label = 'Great match!';
         } else if (confidence >= 0.4) {
