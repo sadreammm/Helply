@@ -33,7 +33,7 @@ def initialize_ai_engine() -> Optional[AIGuidanceEngine]:
             api_key=settings.gemini_api_key,
             model=settings.gemini_model
         )
-        logger.info(f"✓ AI guidance engine initialized")
+        logger.info(f"AI guidance engine initialized")
         return ai_engine
     except Exception as e:
         logger.error(f"Failed to initialize AI engine: {e}")
@@ -49,7 +49,7 @@ kb_engine = None
 async def lifespan(app: FastAPI):
     global crm, ai_engine, kb_engine
     
-    logger.info("🚀 Starting ONBOARD.AI Backend...")
+    logger.info("Starting ONBOARD.AI Backend...")
     
     crm = get_crm(settings.crm_api_base_url, settings.crm_api_key)
     connected = await crm.connect()
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     kb_engine = GuidanceGenerator(ACTION_KB)
     logger.info("✓ Knowledge Base loaded")
     
-    logger.info("✅ Backend ready!")
+    logger.info("Backend ready!")
     
     yield
     
@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
         logger.info("CRM disconnected")
 
 app = FastAPI(
-    title="ONBOARD.AI with Gen AI",
+    title="ONBOARD.AI",
     version="4.0.0",
     lifespan=lifespan
 )
@@ -123,11 +123,10 @@ class GuidanceResponse(BaseModel):
 class AIGuidanceToggle(BaseModel):
     enabled: bool
 
-# API Endpoints
 @app.get("/")
 def read_root():
     return {
-        "message": "ONBOARD.AI with Generative AI",
+        "message": "ONBOARD.AI",
         "version": "4.0.0",
         "features": ["AI Guidance", "KB Fallback", "CRM Integration"],
         "ai_enabled": settings.use_ai_guidance,
@@ -136,13 +135,10 @@ def read_root():
 
 @app.post("/api/guidance", response_model=GuidanceResponse)
 async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
-    """Generate AI-powered or KB-based guidance"""
-    
     employee = await crm.get_employee(context.employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     
-    # Get current task
     tasks = await crm.get_tasks(context.employee_id)
     
     if context.task_id:
@@ -159,7 +155,6 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
     if not current_task:
         raise HTTPException(status_code=404, detail="No active task found")
     
-    # Parse task type
     task_type = current_task['type']
     task_platform = current_task.get('platform', '')
     
@@ -172,7 +167,6 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
     action_id = task_type
     
     try:
-        # Use AI if available
         if ai_engine:
             ai_request = GuidanceRequest(
                 task_title=current_task['title'],
@@ -207,10 +201,8 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
             step_description = None
             guidance_text = None
         else:
-            # KB fallback
             logger.info(f"Using KB: platform='{platform}', action_id='{action_id}', step={current_task['steps_completed']}")
             
-            # Pass current_step in context for detection
             context_dict = context.dict()
             context_dict['current_step'] = current_task['steps_completed']
             
@@ -237,12 +229,10 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
             step_description = kb_guidance.step_description
             guidance_text = kb_guidance.guidance_text
         
-        # FIXED: Detect step advancement based on URL patterns
         detected_step = detect_step_from_url(platform, action_id, context.url, current_task['steps_completed'])
         
         logger.info(f"Step detection: current={current_task['steps_completed']}, detected={detected_step}, total={current_task['total_steps']}")
         
-        # Update task if step advanced
         if detected_step > current_task['steps_completed']:
             logger.info(f"Auto-advancing task from step {current_task['steps_completed']} to {detected_step}")
             background_tasks.add_task(
@@ -254,7 +244,6 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
             )
             current_task['steps_completed'] = detected_step
         
-        # Check completion - task is complete when detected_step >= total_steps
         task_complete = detected_step >= current_task['total_steps']
         
         logger.info(f"Task complete: {task_complete} (detected_step={detected_step} >= total={current_task['total_steps']})")
@@ -262,7 +251,7 @@ async def get_guidance(context: PageContext, background_tasks: BackgroundTasks):
         if task_complete:
             logger.info("Marking task as completed in CRM")
             background_tasks.add_task(
-                crm.delete_task,  # Auto-delete completed tasks
+                crm.delete_task,  
                 current_task['id'],
                 context.employee_id
             )
@@ -305,34 +294,24 @@ def detect_step_from_url(platform: str, action_id: str, url: str, current_step: 
     """Detect which step user is on based on URL patterns"""
     url_lower = url.lower()
     
-    # GitHub repository creation flow
     if 'github.com' in url_lower and 'repo' in action_id.lower():
-        # Step 2+: On a repository page (created) -> TASK COMPLETE!
-        # Pattern: github.com/username/reponame (but NOT /new or /repositories)
-        # Example: github.com/sadreammn/test1
         parts = [p for p in url_lower.replace('https://', '').replace('http://', '').split('/') if p and p != 'github.com']
-        
-        # If we have username/reponame pattern (2+ parts) and NOT on /new page
+
         if len(parts) >= 2 and '/new' not in url_lower and '/repositories' not in url_lower:
             logger.info(f"Repository detected in URL: {parts}, marking as complete")
-            return 3  # Task complete (repo was created)
+            return 3  
         
-        # Step 1: On /new page -> filling form
         if '/new' in url_lower:
             return max(current_step, 1)
         
-        # Step 0: On github.com homepage or dashboard
         if url_lower.endswith('github.com') or url_lower.endswith('github.com/'):
             return 0
     
-    # Add more platform-specific detection here
     
     return current_step
 
 @app.post("/api/chat/parse-task")
 async def parse_task_from_chat(msg: Dict):
-    """Parse task with AI enhancement"""
-    
     from action_matcher import ActionMatcher
     action_matcher = ActionMatcher(ACTION_KB)
     
@@ -348,7 +327,7 @@ async def parse_task_from_chat(msg: Dict):
                 lambda: ai_engine.client.generate_content(
                     f"""User request: "{msg['message']}"
 
-Available platforms: GitHub, Slack, Jira, Figma
+Available platforms: GitHub
 Current URL: {msg.get('context', {}).get('url', 'unknown')}
 
 What is the user trying to accomplish? Return JSON:
@@ -398,7 +377,6 @@ What is the user trying to accomplish? Return JSON:
 
 @app.post("/api/ai/toggle")
 async def toggle_ai_guidance(toggle: AIGuidanceToggle):
-    """Enable/disable AI guidance at runtime"""
     global settings
     settings.use_ai_guidance = toggle.enabled
     
@@ -409,7 +387,6 @@ async def toggle_ai_guidance(toggle: AIGuidanceToggle):
 
 @app.get("/api/ai/status")
 async def get_ai_status():
-    """Get AI engine status"""
     return {
         "ai_enabled": settings.use_ai_guidance,
         "provider": "gemini",
@@ -420,7 +397,6 @@ async def get_ai_status():
 
 @app.get("/api/employees/{employee_id}/tasks")
 async def get_all_employee_tasks(employee_id: str):
-    """Fetch all tasks for an employee"""
     employee = await crm.get_employee(employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -430,7 +406,6 @@ async def get_all_employee_tasks(employee_id: str):
 
 @app.post("/api/employee/task")
 async def get_employee_task(request: Dict):
-    """Fetch active tasks"""
     employee_id = request['employee_id']
     current_url = request['current_url']
     
@@ -462,7 +437,6 @@ async def get_employee_task(request: Dict):
 
 @app.post("/api/chat/create-task")
 async def create_task_from_chat(data: Dict):
-    """Create CRM task from chat"""
     try:
         employee_id = data.get('employee_id')
         task_data = data.get('task', {})
@@ -472,13 +446,9 @@ async def create_task_from_chat(data: Dict):
                 status_code=400,
                 content={"success": False, "error": "Missing employee_id or task data"}
             )
-        
-        # Get step count from KB
         try:
             platform_key = task_data.get('platform', '').split('.')[0]
             action_id = task_data.get('action_id', '')
-            
-            # Find action in KB
             action_def = None
             for p_key, p_data in ACTION_KB['platforms'].items():
                 if p_key == platform_key:
@@ -525,7 +495,6 @@ async def create_task_from_chat(data: Dict):
 
 @app.post("/api/task/progress")
 async def update_task_progress(data: Dict):
-    """Update task progress (auto-deletes when completed)"""
     await crm.update_task(
         data['task_id'],
         data['employee_id'],
@@ -537,7 +506,6 @@ async def update_task_progress(data: Dict):
 
 @app.post("/api/task/create")
 async def create_task(data: Dict):
-    """Manually create a new task for an employee"""
     task_id = await crm.create_task(
         employee_id=data['employee_id'],
         task={
@@ -561,7 +529,6 @@ async def create_task(data: Dict):
 
 @app.delete("/api/task/{task_id}")
 async def delete_task(task_id: str, employee_id: str):
-    """Manually delete a task"""
     success = await crm.delete_task(task_id, employee_id)
     
     if success:
@@ -571,7 +538,6 @@ async def delete_task(task_id: str, employee_id: str):
 
 @app.get("/api/kb/actions")
 async def list_all_actions():
-    """List all available actions from knowledge base"""
     actions = []
     for platform_id, platform_data in ACTION_KB['platforms'].items():
         for action_id, action_data in platform_data['actions'].items():
