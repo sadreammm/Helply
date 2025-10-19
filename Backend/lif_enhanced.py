@@ -6,13 +6,12 @@ from datetime import datetime
 import random
 from collections import defaultdict
 
-# ==================== DATA MODELS ====================
 
 class FeedbackSignal(BaseModel):
     employee_id: str
     task_id: str
     step_number: int
-    signal_type: str  # "got_it", "show_me_where", "correct", "incorrect"
+    signal_type: str
     timestamp: Optional[datetime] = None
     context: Optional[Dict[str, Any]] = None
 
@@ -43,9 +42,8 @@ class RLPolicy(BaseModel):
     avg_completion_rate: float = 0.0
     total_episodes: int = 0
 
-# ==================== IN-MEMORY STORES ====================
 
-feedback_store = defaultdict(list)  # task_id -> [feedbacks]
+feedback_store = defaultdict(list) 
 knowledge_pins_store: Dict[str, KnowledgePin] = {}
 exit_captures_store: Dict[str, ExitCapture] = {}
 rl_policies: Dict[tuple, RLPolicy] = {}
@@ -57,7 +55,6 @@ analytics_data = {
     "feedback_stats": {"got_it": 0, "show_me_where": 0, "correct": 0, "incorrect": 0}
 }
 
-# ==================== RL LOGIC ====================
 
 def calculate_reward(signal_type: str, previous_signals: List[str]) -> float:
     rewards = {
@@ -119,7 +116,6 @@ def get_best_action(task_type: str, role: str, step_number: int) -> str:
     probs = list(policy.action_preferences.values())
     return random.choices(actions, weights=probs, k=1)[0]
 
-# ==================== API ENDPOINTS ====================
 
 app = FastAPI(title="ONBOARD.AI Backend")
 app.add_middleware(
