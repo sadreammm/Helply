@@ -1,6 +1,3 @@
-// content.js - DEMO VERSION (No step counter, cleaner UI)
-
-// Prevent duplicate injection
 if (window.__ONBOARD_LOADED) {
     console.log('[ONBOARD.AI] Content script already loaded, skipping');
 } else {
@@ -789,7 +786,6 @@ class OnboardOverlay {
     }
 }
 
-// Initialize
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         window.__onboardOverlay = new OnboardOverlay();
@@ -798,7 +794,6 @@ if (document.readyState === 'loading') {
     window.__onboardOverlay = new OnboardOverlay();
 }
 
-// Listen for messages
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[ONBOARD.AI] Received message:', request);
     
@@ -810,12 +805,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'start_guidance') {
         console.log('[ONBOARD.AI] Received start_guidance message, task_id:', request.task_id);
         if (window.__onboardOverlay) {
-            // If caller passed a task_id, set that task as current before starting
             (async () => {
                 try {
                     if (request.task_id) {
                         console.log('[ONBOARD.AI] Fetching task by id:', request.task_id);
-                        // Fetch all tasks for employee and find the specified task
                         try {
                             const res = await fetch(`${window.__ONBOARD.API_BASE}/api/employees/${window.__ONBOARD.EMPLOYEE_ID}/tasks`);
                             if (res.ok) {
@@ -857,4 +850,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
 });
 
-} // End of if (!window.__ONBOARD_LOADED)
+} 
